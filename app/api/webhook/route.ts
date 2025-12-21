@@ -386,7 +386,7 @@ async function handleInvoiceUpcoming(invoice: Stripe.Invoice) {
         const couponId = await getOrCreateCoupon(newDiscountPercent);
         if (couponId) {
           await stripe.subscriptions.update(subscriptionId, {
-            coupon: couponId,
+            discounts: [{ coupon: couponId }],
           });
         }
       }
@@ -467,7 +467,7 @@ async function updateReferrerDiscount(referralCode: string) {
         const couponId = await getOrCreateCoupon(newDiscountPercent);
         if (couponId) {
           await stripe.subscriptions.update(subscriptionId, {
-            coupon: couponId,
+            discounts: [{ coupon: couponId }],
           });
         }
       }
