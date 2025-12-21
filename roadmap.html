@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Success Academy International - 開発ロードマップ</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .timeline {
+            position: relative;
+            padding: 40px 0;
+        }
+        
+        .timeline-item {
+            display: flex;
+            margin-bottom: 40px;
+            position: relative;
+        }
+        
+        .timeline-marker {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            flex-shrink: 0;
+            margin-right: 30px;
+            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+        }
+        
+        .timeline-marker.completed {
+            background: #10b981;
+        }
+        
+        .timeline-marker.current {
+            background: #f59e0b;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        .timeline-content {
+            flex: 1;
+            background: #f9fafb;
+            border-radius: 15px;
+            padding: 25px;
+            border: 2px solid #e5e7eb;
+        }
+        
+        .timeline-content h3 {
+            color: #667eea;
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+        
+        .timeline-content .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        
+        .status.completed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .status.current {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .status.upcoming {
+            background: #e0e7ff;
+            color: #3730a3;
+        }
+        
+        .expandable {
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .expandable::before {
+            content: '▶ ';
+            display: inline-block;
+            transition: transform 0.3s;
+        }
+        
+        .expandable.expanded::before {
+            transform: rotate(90deg);
+        }
+        
+        .expandable-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        
+        .expandable-content.show {
+            max-height: 3000px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            border: 2px solid #e5e7eb;
+        }
+        
+        .card h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .flow-diagram {
+            background: #f9fafb;
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: monospace;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        
+        .checklist {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .checklist li {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f9fafb;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .checklist li::before {
+            content: '☐ ';
+            font-size: 1.2em;
+            margin-right: 10px;
+        }
+        
+        .checklist li.done::before {
+            content: '✅ ';
+        }
+        
+        .stat-box {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .stat {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        .next-action {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 30px 0;
+            text-align: center;
+        }
+        
+        .next-action h3 {
+            font-size: 2em;
+            margin-bottom: 15px;
+        }
+        
+        .next-action button {
+            background: white;
+            color: #059669;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: transform 0.2s;
+        }
+        
+        .next-action button:hover {
+            transform: scale(1.05);
+        }
+        
+        .screen-preview {
+            background: #1f2937;
+            color: #f9fafb;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        
+        .screen-preview pre {
+            white-space: pre;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Success Academy International</h1>
+            <p>開発ロードマップ - 2024年11月〜2026年4月</p>
+        </header>
+        
+        <div class="content">
+            <!-- 進捗サマリー -->
+            <div class="stat-box">
+                <div class="stat">
+                    <div class="stat-number">1/5</div>
+                    <div class="stat-label">フェーズ完了</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">20%</div>
+                    <div class="stat-label">全体進捗</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">4ヶ月</div>
+                    <div class="stat-label">ローンチまで</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">280h</div>
+                    <div class="stat-label">推定作業時間</div>
+                </div>
+            </div>
+
+            <!-- タイムライン -->
+            <div class="timeline">
+                <!-- Phase 1 -->
+                <div class="timeline-item">
+                    <div class="timeline-marker completed">✓</div>
+                    <div class="timeline-content">
+                        <h3>Phase 1: 基礎システム</h3>
+                        <span class="status completed">✅ 完了</span>
+                        <p><strong>期間:</strong> 2024年11月20日</p>
+                        <p><strong>作業時間:</strong> 2時間</p>
+                        
+                        <ul class="checklist">
+                            <li class="done">Next.js + TypeScript セットアップ</li>
+                            <li class="done">Supabase 認証システム</li>
+                            <li class="done">ログイン・サインアップ画面</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Phase 2 -->
+                <div class="timeline-item">
+                    <div class="timeline-marker current">👈</div>
+                    <div class="timeline-content">
+                        <h3 class="expandable expanded" onclick="toggleExpand(this)">Phase 2: 決済システム</h3>
+                        <span class="status current">🔄 進行中</span>
+                        <p><strong>期間:</strong> 2024年11月〜12月（2週間）</p>
+                        <p><strong>作業時間:</strong> 約56時間</p>
+                        
+                        <div class="expandable-content show">
+                            <!-- Step 1: データベース -->
+                            <div class="card">
+                                <h4>📊 Step 1: データベース設計（1日）</h4>
+                                <div class="flow-diagram">テーブル作成:
+┌─────────────────┐   ┌──────────────────┐   ┌─────────────────┐
+│   students      │   │   referrals      │   │ referral_codes  │
+├─────────────────┤   ├──────────────────┤   ├─────────────────┤
+│ id              │   │ referrer_id      │   │ user_id         │
+│ parent_id       │   │ referred_user_id │   │ code            │
+│ name            │   │ status           │   │ created_at      │
+│ age             │   │ signed_up_at     │   └─────────────────┘
+│ stripe_sub_id   │   └──────────────────┘
+└─────────────────┘</div>
+                                <ul class="checklist">
+                                    <li>Supabase SQL Editor を開く</li>
+                                    <li>3つのテーブルを作成</li>
+                                    <li>Row Level Security (RLS) 設定</li>
+                                    <li>テストデータ挿入</li>
+                                </ul>
+                            </div>
+
+                            <!-- Step 2: ダッシュボード -->
+                            <div class="card">
+                                <h4>📱 Step 2: ダッシュボード（2日）</h4>
+                                <div class="screen-preview">
+<pre>┌───────────────────────────────────────────┐
+│ Success Academy    user@email.com ▼       │
+├───────────────────────────────────────────┤
+│                                           │
+│        Who's learning today?              │
+│                                           │
+│  [Emma]    [Liam]   [Sophia]   [+ Add]  │
+│  Age 4     Age 5    Age 3       Student  │
+│  $56/月    $50/月   $45/月               │
+│                                           │
+│  🎁 Referral: 3/5 friends                │
+│  ████████░░░░░░ 60% OFF                  │
+│                                           │
+└───────────────────────────────────────────┘</pre>
+                                </div>
+                                <ul class="checklist">
+                                    <li>Netflix風の生徒カード</li>
+                                    <li>料金表示（割引適用後）</li>
+                                    <li>紹介ステータス</li>
+                                    <li>生徒追加ボタン</li>
+                                </ul>
+                            </div>
+
+                            <!-- Step 3: 生徒追加 -->
+                            <div class="card">
+                                <h4>➕ Step 3: 生徒追加・管理（2日）</h4>
+                                <ul class="checklist">
+                                    <li>生徒情報フォーム</li>
+                                    <li>リアルタイム料金プレビュー</li>
+                                    <li>アバターカラー選択</li>
+                                    <li>データベース保存</li>
+                                </ul>
+                            </div>
+
+                            <!-- Step 4: Stripe -->
+                            <div class="card">
+                                <h4>💳 Step 4: Stripe統合（3日）</h4>
+                                <div class="flow-diagram">決済フロー:
+ユーザーが「Add Student」
+        ↓
+Stripe Checkout セッション
+        ↓
+カード情報入力
+        ↓
+Subscription 作成
+  ├─ 14日トライアル
+  ├─ $80/月（割引適用）
+  └─ Proration有効
+        ↓
+データベース更新
+        ↓
+ダッシュボードへ</div>
+                                <ul class="checklist">
+                                    <li>Stripeアカウント作成</li>
+                                    <li>Checkout統合</li>
+                                    <li>Webhook設定</li>
+                                    <li>サブスクリプション管理</li>
+                                </ul>
+                            </div>
+
+                            <!-- Step 5: 紹介システム -->
+                            <div class="card">
+                                <h4>🎁 Step 5: 紹介システム（3日）</h4>
+                                <div class="flow-diagram">自動割引:
+Friend が入会
+     ↓
+紹介カウント +1
+     ↓
+新しい割引率を計算
+  (例: 3人 → 60% OFF)
+     ↓
+Stripe Subscription 更新
+     ↓
+次回課金から新料金適用</div>
+                                <ul class="checklist">
+                                    <li>紹介コード生成</li>
+                                    <li>紹介トラッキング</li>
+                                    <li>自動割引適用</li>
+                                    <li>ダッシュボード表示</li>
+                                </ul>
+                            </div>
+
+                            <!-- Step 6: テスト -->
+                            <div class="card">
+                                <h4>🧪 Step 6: テスト（2日）</h4>
+                                <ul class="checklist">
+                                    <li>新規ユーザー登録テスト</li>
+                                    <li>兄弟追加テスト</li>
+                                    <li>紹介コードテスト</li>
+                                    <li>割引計算テスト</li>
+                                    <li>Webhookテスト</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Phase 3 -->
+                <div class="timeline-item">
+                    <div class="timeline-marker">3</div>
+                    <div class="timeline-content">
+                        <h3 class="expandable" onclick="toggleExpand(this)">Phase 3: レッスンシステム</h3>
+                        <span class="status upcoming">⏳ 予定</span>
+                        <p><strong>期間:</strong> 2025年1月（1週間）</p>
+                        <p><strong>作業時間:</strong> 約28時間</p>
+                        
+                        <div class="expandable-content">
+                            <ul class="checklist">
+                                <li>レッスンカレンダー表示</li>
+                                <li>予約システム</li>
+                                <li>Zoom統合（固定リンクまたはAPI）</li>
+                                <li>確認メール送信</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Phase 4 -->
+                <div class="timeline-item">
+                    <div class="timeline-marker">4</div>
+                    <div class="timeline-content">
+                        <h3 class="expandable" onclick="toggleExpand(this)">Phase 4: デザイン改善</h3>
+                        <span class="status upcoming">⏳ 予定</span>
+                        <p><strong>期間:</strong> 2025年2月（3週間）</p>
+                        <p><strong>作業時間:</strong> 約84時間</p>
+                        
+                        <div class="expandable-content">
+                            <ul class="checklist">
+                                <li>UI/UX 改善</li>
+                                <li>3-5歳向けの大きなボタン</li>
+                                <li>カラフルなデザイン</li>
+                                <li>アニメーション追加</li>
+                                <li>モバイル最適化</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Phase 5 -->
+                <div class="timeline-item">
+                    <div class="timeline-marker">5</div>
+                    <div class="timeline-content">
+                        <h3 class="expandable" onclick="toggleExpand(this)">Phase 5: テスト & ローンチ準備</h3>
+                        <span class="status upcoming">⏳ 予定</span>
+                        <p><strong>期間:</strong> 2025年3月（1ヶ月）</p>
+                        <p><strong>作業時間:</strong> 約112時間</p>
+                        
+                        <div class="expandable-content">
+                            <ul class="checklist">
+                                <li>ベータテスト（10-20家族）</li>
+                                <li>フィードバック収集</li>
+                                <li>バグ修正</li>
+                                <li>ドキュメント作成</li>
+                                <li>マーケティング準備</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 次にやること -->
+            <div class="next-action">
+                <h3>🎯 次回のセッションでやること</h3>
+                <p><strong>Step 1: データベース設計（30分）</strong></p>
+                <ol style="text-align: left; max-width: 600px; margin: 20px auto;">
+                    <li>VS Code を開く</li>
+                    <li><code>npm run dev</code> を実行</li>
+                    <li>Supabase SQL Editor でテーブル作成</li>
+                    <li>RLS (Row Level Security) 設定</li>
+                    <li>テストデータ挿入</li>
+                </ol>
+                <button onclick="alert('準備OK！次のセッションで始めましょう！🚀')">準備完了！</button>
+            </div>
+
+            <!-- コスト見積もり -->
+            <div class="card">
+                <h4>💰 コスト見積もり</h4>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr style="background: #f9fafb;">
+                        <th style="padding: 10px; text-align: left; border: 1px solid #e5e7eb;">項目</th>
+                        <th style="padding: 10px; text-align: right; border: 1px solid #e5e7eb;">コスト</th>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #e5e7eb;">開発（自分で）</td>
+                        <td style="padding: 10px; text-align: right; border: 1px solid #e5e7eb;">¥0</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #e5e7eb;">Supabase（Free tier）</td>
+                        <td style="padding: 10px; text-align: right; border: 1px solid #e5e7eb;">¥0</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #e5e7eb;">Vercel（Free tier）</td>
+                        <td style="padding: 10px; text-align: right; border: 1px solid #e5e7eb;">¥0</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #e5e7eb;">Zoom Pro</td>
+                        <td style="padding: 10px; text-align: right; border: 1px solid #e5e7eb;">¥2,000/月</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #e5e7eb;">先生（固定費）</td>
+                        <td style="padding: 10px; text-align: right; border: 1px solid #e5e7eb;">¥111,000/月</td>
+                    </tr>
+                    <tr style="background: #f9fafb; font-weight: bold;">
+                        <td style="padding: 10px; border: 1px solid #e5e7eb;">月間ランニングコスト</td>
+                        <td style="padding: 10px; text-align: right; border: 1px solid #e5e7eb;">¥113,000</td>
+                    </tr>
+                    <tr style="background: #d1fae5; font-weight: bold;">
+                        <td style="padding: 10px; border: 1px solid #e5e7eb;">損益分岐点</td>
+                        <td style="padding: 10px; text-align: right; border: 1px solid #e5e7eb;">12生徒</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- マイルストーン -->
+            <div class="card">
+                <h4>🎯 重要なマイルストーン</h4>
+                <div class="flow-diagram">✅ 11/20: ログイン完成
+ ↓
+🎯 12/15: 決済システム完成 👈 次のゴール
+ ↓
+🎯 01/31: レッスン予約完成
+ ↓
+🎯 02/28: ベータテスト開始
+ ↓
+🚀 04/01: ローンチ！（目標30家族）</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleExpand(element) {
+            element.classList.toggle('expanded');
+            const content = element.nextElementSibling.nextElementSibling;
+            content.classList.toggle('show');
+        }
+    </script>
+</body>
+</html>
