@@ -405,7 +405,7 @@ async function handleInvoiceUpcoming(invoice: Stripe.Invoice) {
       console.log('Discount unchanged, no update needed');
     }
   } catch (error) {
-    console.error('Error updating subscription discount:', error);
+    console.error('Error updating (subscription as any).discount:', error);
   }
 }
 
@@ -454,11 +454,11 @@ async function updateReferrerDiscount(referralCode: string) {
     }
     
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const currentPercent = subscription.discount?.coupon?.percent_off || 0;
+    const currentPercent = (subscription as any).discount?.coupon?.percent_off || 0;
     
     if (currentPercent !== newDiscountPercent) {
       // 既存の割引を削除
-      if (subscription.discount) {
+      if ((subscription as any).discount) {
         await stripe.subscriptions.deleteDiscount(subscriptionId);
       }
       
