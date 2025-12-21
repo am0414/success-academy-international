@@ -369,7 +369,7 @@ async function handleInvoiceUpcoming(invoice: Stripe.Invoice) {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     
     // 現在の割引を確認
-    const currentDiscount = subscription.discount;
+    const currentDiscount = (subscription as any).discount;
     const currentPercent = currentDiscount?.coupon?.percent_off || 0;
     
     // 割引が変わった場合のみ更新
