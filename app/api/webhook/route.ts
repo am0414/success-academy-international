@@ -191,7 +191,7 @@ async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
   console.log('Invoice data:', JSON.stringify(invoice, null, 2));
 
   const subscriptionId = (invoice as any).parent?.subscription_details?.subscription 
-  || invoice.subscription as string | null;
+  || (invoice as any).subscription as string | null;
 
   if (!subscriptionId) {
     console.error('No subscription ID in invoice');
