@@ -351,7 +351,7 @@ export default function AdminCalendar() {
             ) : (
               <button
                 onClick={() => setShowDeleteConfirm(true)}
-                disabled={selectedLesson.reservation_count && selectedLesson.reservation_count > 0}
+                disabled={(selectedLesson.reservation_count ?? 0) > 0}
                 className="w-full py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {selectedLesson.reservation_count && selectedLesson.reservation_count > 0
