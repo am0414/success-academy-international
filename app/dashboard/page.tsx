@@ -13,18 +13,19 @@ interface Student {
   subscription_status: 'none' | 'trial' | 'active' | 'cancelled';
   referral_code?: string;
   discount_percent?: number;
+  monthly_price?: number;
 }
 
-interface ReferralStats {
-  total: number;
-  active: number;
-  trial: number;
-  cancelled: number;
+interface Referral {
+  id: string;
+  referred_name: string | null;
+  status: 'pending' | 'trial' | 'active' | 'cancelled';
+  created_at: string;
 }
 
 export default function DashboardPage() {
   const [students, setStudents] = useState<Student[]>([]);
-  const [referralStats, setReferralStats] = useState<ReferralStats | null>(null);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState('');
 
@@ -56,6 +57,7 @@ export default function DashboardPage() {
           name,
           age,
           subscription_status,
+          monthly_price,
           referral_codes (code)
         `)
         .eq('parent_id', user.id)
@@ -70,7 +72,7 @@ export default function DashboardPage() {
           const { count } = await supabase
             .from('referrals')
             .select('*', { count: 'exact', head: true })
-            .eq('student_id', student.id)
+            .eq('referrer_student_id', student.id)
             .eq('status', 'active');
 
           const activeCount = count || 0;
@@ -83,27 +85,24 @@ export default function DashboardPage() {
             subscription_status: student.subscription_status || 'none',
             referral_code: student.referral_codes?.[0]?.code,
             discount_percent: discountPercent,
+            monthly_price: student.monthly_price || 200,
           };
         })
       );
 
       setStudents(studentsWithDiscount);
 
-      // 紹介統計取得（最初の生徒のもの）
+      // 全生徒の紹介一覧を取得
       if (studentsWithDiscount.length > 0) {
-        const firstStudent = studentsWithDiscount[0];
-        const { data: referrals } = await supabase
+        const studentIds = studentsWithDiscount.map(s => s.id);
+        const { data: referralsData } = await supabase
           .from('referrals')
-          .select('status')
-          .eq('student_id', firstStudent.id);
+          .select('id, referred_name, status, created_at')
+          .in('referrer_student_id', studentIds)
+          .order('created_at', { ascending: false });
 
-        if (referrals) {
-          setReferralStats({
-            total: referrals.length,
-            active: referrals.filter(r => r.status === 'active').length,
-            trial: referrals.filter(r => r.status === 'trial').length,
-            cancelled: referrals.filter(r => r.status === 'cancelled').length,
-          });
+        if (referralsData) {
+          setReferrals(referralsData as Referral[]);
         }
       }
     } catch (error) {
@@ -114,7 +113,6 @@ export default function DashboardPage() {
   };
 
   const handleManageStudent = (studentId: string) => {
-    // TODO: サブスクリプション管理ページへ
     console.log('Manage student:', studentId);
   };
 
@@ -129,9 +127,16 @@ export default function DashboardPage() {
     );
   }
 
+  // ReferralSection用のデータを準備
+  const studentBillingData = students.map(s => ({
+    id: s.id,
+    name: s.name,
+    monthlyPrice: 200, // 基本料金
+    discountPercent: s.discount_percent || 0,
+  }));
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* ヘッダー */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -148,7 +153,6 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
-        {/* ウェルカムセクション */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-800 mb-2">
             Welcome back! 👋
@@ -158,7 +162,6 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* 生徒カードグリッド */}
         <section className="mb-10">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-slate-800">Your Students</h2>
@@ -202,12 +205,10 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* 紹介プログラムセクション */}
-        {students.length > 0 && students[0].referral_code && (
+        {students.length > 0 && (
           <ReferralSection
-            referralCode={students[0].referral_code}
-            stats={referralStats}
-            discountPercent={students[0].discount_percent || 0}
+            students={studentBillingData}
+            referrals={referrals}
           />
         )}
       </main>

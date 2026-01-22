@@ -23,6 +23,12 @@ export default function AddStudent() {
   const [avatarColor, setAvatarColor] = useState(AVATAR_COLORS[0]);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
+  
+  // 紹介コード関連
+  const [referralCode, setReferralCode] = useState('');
+  const [referralStatus, setReferralStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+  const [referrerName, setReferrerName] = useState('');
+  const [referrerStudentId, setReferrerStudentId] = useState<string | null>(null);
 
   useEffect(() => {
     checkUser();
@@ -36,6 +42,58 @@ export default function AddStudent() {
     }
     setUser(user);
   }
+
+  // 紹介コードの検証
+  async function validateReferralCode(code: string) {
+    if (!code || code.length < 4) {
+      setReferralStatus('idle');
+      setReferrerName('');
+      setReferrerStudentId(null);
+      return;
+    }
+
+    setReferralStatus('checking');
+
+    try {
+      // referral_codesテーブルから検索
+      const { data: codeData, error } = await supabase
+        .from('referral_codes')
+        .select('id, student_id')
+        .eq('code', code.toUpperCase())
+        .single();
+
+      if (error || !codeData) {
+        setReferralStatus('invalid');
+        setReferrerName('');
+        setReferrerStudentId(null);
+        return;
+      }
+
+      // 生徒名を別クエリで取得
+      const { data: studentData } = await supabase
+        .from('students')
+        .select('name')
+        .eq('id', codeData.student_id)
+        .single();
+
+      setReferralStatus('valid');
+      setReferrerName(studentData?.name || 'Unknown');
+      setReferrerStudentId(codeData.student_id);
+    } catch (err) {
+      setReferralStatus('invalid');
+      setReferrerName('');
+      setReferrerStudentId(null);
+    }
+  }
+
+  // 紹介コード入力時の処理（デバウンス）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      validateReferralCode(referralCode);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [referralCode]);
 
   function calculateAge(birthDate: string): number {
     const today = new Date();
@@ -65,7 +123,8 @@ export default function AddStudent() {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase
+      // 生徒を追加
+      const { data: studentData, error: studentError } = await supabase
         .from('students')
         .insert({
           parent_id: user.id,
@@ -74,15 +133,31 @@ export default function AddStudent() {
           date_of_birth: dateOfBirth,
           avatar_color: avatarColor,
           subscription_status: 'trial',
-          monthly_price: 150,
+          monthly_price: 200,
+          referral_code_used: referralStatus === 'valid' ? referralCode.toUpperCase() : null,
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (studentError) throw studentError;
+
+      // 有効な紹介コードがあれば、referralsテーブルに追加
+      if (referralStatus === 'valid' && referralCode && referrerStudentId) {
+        await supabase
+          .from('referrals')
+          .insert({
+            referrer_student_id: referrerStudentId,
+            referred_user_id: user.id,
+            referred_student_id: studentData.id,
+            referred_name: `${firstName} ${lastName}`,
+            referral_code: referralCode.toUpperCase(),
+            status: 'trial',
+            signed_up_at: new Date().toISOString(),
+          });
+      }
 
       // Redirect to checkout with the new student ID
-      router.push(`/checkout?studentId=${data.id}`);
+      router.push(`/checkout?studentId=${studentData.id}`);
     } catch (error: any) {
       console.error('Error adding student:', error);
       alert('Failed to add student: ' + error.message);
@@ -171,6 +246,39 @@ export default function AddStudent() {
             </div>
           </div>
 
+          {/* Referral Code */}
+          <div>
+            <label className="block text-gray-700 mb-2 font-medium">
+              Referral Code <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={referralCode}
+              onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 text-gray-800 uppercase ${
+                referralStatus === 'valid' 
+                  ? 'border-green-500 focus:ring-green-500 bg-green-50' 
+                  : referralStatus === 'invalid'
+                  ? 'border-red-500 focus:ring-red-500 bg-red-50'
+                  : 'border-gray-300 focus:ring-purple-500'
+              }`}
+              placeholder="e.g. SA394B90"
+            />
+            {referralStatus === 'checking' && (
+              <p className="mt-2 text-sm text-gray-500">Checking code...</p>
+            )}
+            {referralStatus === 'valid' && (
+              <p className="mt-2 text-sm text-green-600">
+                ✓ Valid code! <span className="font-semibold">{referrerName}</span> will receive a 20% discount.
+              </p>
+            )}
+            {referralStatus === 'invalid' && referralCode.length >= 4 && (
+              <p className="mt-2 text-sm text-red-600">
+                ✗ Invalid referral code
+              </p>
+            )}
+          </div>
+
           {/* Preview */}
           <div className="bg-gray-100 rounded-xl p-6 text-center">
             <div
@@ -190,11 +298,16 @@ export default function AddStudent() {
           {/* Pricing Info */}
           <div className="bg-purple-100 rounded-xl p-4">
             <p className="text-purple-800 font-semibold">
-              Monthly Price: $150/month
+              Monthly Price: $200/month
             </p>
             <p className="text-purple-600 text-sm">
               Includes 14-day free trial
             </p>
+            {referralStatus === 'valid' && (
+              <p className="text-green-700 text-sm mt-2 font-medium">
+                🎁 {referrerName} will get 20% off their subscription!
+              </p>
+            )}
           </div>
 
           {/* Submit Button */}

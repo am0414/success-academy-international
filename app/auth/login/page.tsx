@@ -68,7 +68,7 @@ function LoginForm() {
             }
           }
 
-          setMessage('Check your email for confirmation link!');
+          setMessage('✉️ ✉️ Check your email for confirmation link!');
         }
       } else {
         // ログイン処理
@@ -163,7 +163,7 @@ function LoginForm() {
           <p className={`mt-4 text-center text-sm ${
             message.includes('error') || message.includes('Error') 
               ? 'text-red-600' 
-              : 'text-green-600'
+              : 'text-green-600 text-lg font-bold'
           }`}>
             {message}
           </p>

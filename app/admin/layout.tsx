@@ -47,7 +47,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <div className="absolute bottom-0 w-64 p-6 border-t border-slate-700">
           <Link
-            href="/select-profile"
+            href="/dashboard"
             className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
           >
             <span>←</span>

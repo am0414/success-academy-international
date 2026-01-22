@@ -9,6 +9,8 @@ interface Student {
   id: string;
   name: string;
   avatar_color: string;
+  subscription_status: string | null;
+  stripe_subscription_id: string | null;
 }
 
 export default function StudentLayout({
@@ -24,6 +26,7 @@ export default function StudentLayout({
   const [student, setStudent] = useState<Student | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (studentId) {
@@ -45,15 +48,28 @@ export default function StudentLayout({
   const fetchStudent = async () => {
     const { data, error } = await supabase
       .from('students')
-      .select('id, name, avatar_color')
+      .select('id, name, avatar_color, subscription_status, stripe_subscription_id')
       .eq('id', studentId)
       .single();
     
     if (error) {
       console.error('Error:', error);
+      setLoading(false);
       return;
     }
+    
+    // Payment完了チェック：activeか、stripe_subscription_idがあるtrial/trialingのみ許可
+    const isActive = data.subscription_status === 'active';
+    const isPaidTrial = data.subscription_status === 'trial' && data.stripe_subscription_id;
+    const isTrialing = data.subscription_status === 'trialing' && data.stripe_subscription_id;
+    
+    if (!isActive && !isPaidTrial && !isTrialing) {
+      router.push(`/checkout?studentId=${studentId}`);
+      return;
+    }
+    
     setStudent(data);
+    setLoading(false);
   };
 
   const fetchPendingCompletions = async () => {
@@ -114,6 +130,30 @@ export default function StudentLayout({
   ];
 
   const isActive = (href: string) => pathname === href;
+
+  // ローディング中
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 生徒データがない場合（リダイレクト中など）
+  if (!student) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-500">Redirecting...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
@@ -188,7 +228,7 @@ export default function StudentLayout({
         {/* Switch Profile */}
         <div className="p-4 border-t border-slate-200">
           <Link
-            href="/select-profile"
+            href="/dashboard"
             className="flex items-center gap-3 px-3 py-3 rounded-xl text-slate-600 hover:bg-slate-50 transition-all"
           >
             <span className="text-xl">🔄</span>

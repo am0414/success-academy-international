@@ -36,7 +36,7 @@ export default function StudentCard({ student, onManage }: StudentCardProps) {
 
   const handleCardClick = () => {
     if (student.subscription_status === 'active' || student.subscription_status === 'trial') {
-      router.push(`/dashboard/learning/${student.id}`);
+      router.push(`/student/${student.id}/my-page`);
     } else {
       router.push(`/checkout?studentId=${student.id}`);
     }

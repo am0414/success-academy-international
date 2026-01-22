@@ -12,9 +12,11 @@ interface Student {
 
 interface CheckoutInfo {
   student: Student;
-  basePrice: number;
+  enrollmentFee: number;
+  monthlyPrice: number;
   discountPercent: number;
-  finalPrice: number;
+  discountedMonthlyPrice: number;
+  firstPayment: number;
   activeReferrals: number;
 }
 
@@ -54,19 +56,24 @@ function CheckoutContent() {
       const { count } = await supabase
         .from('referrals')
         .select('*', { count: 'exact', head: true })
-        .eq('student_id', studentId)
+        .eq('referrer_student_id', studentId)
         .eq('status', 'active');
 
       const activeReferrals = count || 0;
       const discountPercent = Math.min(activeReferrals * 20, 100);
-      const basePrice = 150;
-      const finalPrice = basePrice * (1 - discountPercent / 100);
+      
+      const enrollmentFee = 50;
+      const monthlyPrice = 200;
+      const discountedMonthlyPrice = monthlyPrice * (1 - discountPercent / 100);
+      const firstPayment = enrollmentFee + discountedMonthlyPrice;
 
       setCheckoutInfo({
         student,
-        basePrice,
+        enrollmentFee,
+        monthlyPrice,
         discountPercent,
-        finalPrice,
+        discountedMonthlyPrice,
+        firstPayment,
         activeReferrals,
       });
     } catch (err) {
@@ -81,19 +88,25 @@ function CheckoutContent() {
     
     setProcessing(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentId: checkoutInfo.student.id,
+          userId: user?.id,
+          customerEmail: user?.email,
           priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID,
-          discount_percent: checkoutInfo.discountPercent,
+          discountPercent: checkoutInfo.discountPercent,
         }),
       });
 
       const data = await response.json();
       
-      if (data.url) {
+      if (data.redirect) {
+        router.push(data.redirect);
+      } else if (data.url) {
         window.location.href = data.url;
       } else {
         throw new Error('Failed to create checkout session');
@@ -137,7 +150,7 @@ function CheckoutContent() {
     );
   }
 
-  const { student, basePrice, discountPercent, finalPrice, activeReferrals } = checkoutInfo;
+  const { student, enrollmentFee, monthlyPrice, discountPercent, discountedMonthlyPrice, firstPayment, activeReferrals } = checkoutInfo;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-12 px-4">
@@ -173,6 +186,18 @@ function CheckoutContent() {
               </div>
             </div>
 
+            {/* トライアル情報 */}
+            <div className="mb-8 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl">🎉</span>
+                <h3 className="text-lg font-semibold text-emerald-800">14-Day Free Trial</h3>
+              </div>
+              <p className="text-emerald-700 text-sm">
+                Try unlimited classes free for 14 days. You won&apos;t be charged until the trial ends.
+                Cancel anytime during the trial with no obligation.
+              </p>
+            </div>
+
             {/* プラン詳細 */}
             <div className="mb-8">
               <h3 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
@@ -182,8 +207,8 @@ function CheckoutContent() {
               <div className="bg-slate-50 rounded-2xl p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <p className="font-semibold text-slate-800 text-lg">Unlimited Classes</p>
-                    <p className="text-slate-500 text-sm">English &amp; Math • Ages 3-5</p>
+                    <p className="font-semibold text-slate-800 text-lg">Unlimited Group Classes</p>
+                    <p className="text-slate-500 text-sm">English &amp; Math • Ages 4-15</p>
                   </div>
                   <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                     Monthly
@@ -198,11 +223,11 @@ function CheckoutContent() {
                     Unlimited live classes
                   </li>
                   <li className="flex items-center gap-2">
-                    <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Small group learning (max 6 students)
-                  </li>
+  <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+  </svg>
+  Small group learning (max 20 students)
+</li>
                   <li className="flex items-center gap-2">
                     <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -226,11 +251,19 @@ function CheckoutContent() {
               </h3>
 
               <div className="space-y-3">
+                {/* 入会費 */}
                 <div className="flex justify-between text-slate-600">
-                  <span>Monthly subscription</span>
-                  <span>${basePrice.toFixed(2)}</span>
+                  <span>Enrollment fee (one-time)</span>
+                  <span>${enrollmentFee.toFixed(2)}</span>
                 </div>
 
+                {/* 月額 */}
+                <div className="flex justify-between text-slate-600">
+                  <span>Monthly subscription</span>
+                  <span>${monthlyPrice.toFixed(2)}</span>
+                </div>
+
+                {/* 紹介割引 */}
                 {discountPercent > 0 && (
                   <div className="flex justify-between text-emerald-600">
                     <span className="flex items-center gap-2">
@@ -239,30 +272,70 @@ function CheckoutContent() {
                       </span>
                       {activeReferrals} active referral{activeReferrals !== 1 ? 's' : ''}
                     </span>
-                    <span>-{discountPercent}%</span>
+                    <span>-{discountPercent}% on monthly</span>
                   </div>
                 )}
 
-                <div className="pt-3 border-t border-slate-200 flex justify-between items-baseline">
-                  <span className="font-semibold text-slate-800">Total per month</span>
-                  <div className="text-right">
-                    {discountPercent > 0 && (
-                      <span className="text-slate-400 line-through text-sm mr-2">
-                        ${basePrice.toFixed(2)}
+                {/* 区切り線 */}
+                <div className="pt-3 border-t border-slate-200">
+                  {/* トライアル後の初回請求 */}
+                  <div className="flex justify-between items-baseline mb-2">
+                    <span className="text-slate-600">First payment (after 14-day trial)</span>
+                    <div className="text-right">
+                      <span className="text-lg font-bold text-slate-800">
+                        ${firstPayment.toFixed(2)}
                       </span>
-                    )}
-                    <span className="text-2xl font-bold text-slate-800">
-                      ${finalPrice.toFixed(2)}
-                    </span>
-                    {finalPrice === 0 && (
-                      <span className="ml-2 px-2 py-1 bg-gradient-to-r from-yellow-400 to-orange-400 text-white text-xs font-bold rounded">
-                        FREE!
+                    </div>
+                  </div>
+                  
+                  {/* 2ヶ月目以降 */}
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-slate-600">Then monthly</span>
+                    <div className="text-right">
+                      {discountPercent > 0 && (
+                        <span className="text-slate-400 line-through text-sm mr-2">
+                          ${monthlyPrice.toFixed(2)}
+                        </span>
+                      )}
+                      <span className="text-lg font-bold text-slate-800">
+                        ${discountedMonthlyPrice.toFixed(2)}
                       </span>
-                    )}
+                      {discountedMonthlyPrice === 0 && (
+                        <span className="ml-2 px-2 py-1 bg-gradient-to-r from-yellow-400 to-orange-400 text-white text-xs font-bold rounded">
+                          FREE!
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
+{/* 今日の請求 */}
+<div className="mb-8 bg-blue-50 border border-blue-200 rounded-xl p-4">
+  <div className="flex justify-between items-center">
+    <span className="font-medium text-blue-800">Due today</span>
+    <span className="text-2xl font-bold text-blue-800">$0.00</span>
+  </div>
+  <p className="text-blue-600 text-sm mt-1">
+    Your card will be saved for future payments
+  </p>
+</div>
+
+{/* Stripe画面についての説明 */}
+<div className="mb-8 bg-amber-50 border border-amber-200 rounded-xl p-4">
+  <div className="flex items-start gap-3">
+    <span className="text-xl">💡</span>
+    <div>
+      <p className="font-medium text-amber-800 mb-1">About the payment screen</p>
+      <p className="text-amber-700 text-sm">
+        The Stripe checkout will show &quot;$200/month&quot; for the subscription. 
+        The ${enrollmentFee} enrollment fee will be automatically added to your first payment 
+        after the trial ends, making your first charge <strong>${firstPayment.toFixed(2)}</strong>.
+      </p>
+    </div>
+  </div>
+</div>
 
             {/* CTAボタン */}
             <button
@@ -282,10 +355,8 @@ function CheckoutContent() {
                   </svg>
                   Processing...
                 </span>
-              ) : finalPrice === 0 ? (
-                'Subscribe for FREE 🎉'
               ) : (
-                `Subscribe for $${finalPrice.toFixed(2)}/month`
+                'Start 14-Day Free Trial'
               )}
             </button>
 

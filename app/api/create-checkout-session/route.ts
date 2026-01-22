@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-12-15.clover',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+// 定数
+const MONTHLY_PRICE = 200; // $200/月
+const ENROLLMENT_FEE = 50; // $50 入会費
+const TRIAL_DAYS = 14;
 
 // 割引率に応じたクーポンを取得または作成
 async function getOrCreateCoupon(discountPercent: number): Promise<string | null> {
@@ -18,11 +21,9 @@ async function getOrCreateCoupon(discountPercent: number): Promise<string | null
   const couponId = `referral_${discountPercent}off`;
   
   try {
-    // 既存のクーポンを取得
     await stripe.coupons.retrieve(couponId);
     return couponId;
   } catch (error: any) {
-    // クーポンが存在しない場合は作成
     if (error.code === 'resource_missing') {
       const coupon = await stripe.coupons.create({
         id: couponId,
@@ -36,26 +37,50 @@ async function getOrCreateCoupon(discountPercent: number): Promise<string | null
   }
 }
 
+// 月額のPriceを取得または作成
+async function getOrCreateMonthlyPrice(): Promise<string> {
+  const productName = 'Success Academy International - Monthly Subscription';
+  
+  const prices = await stripe.prices.list({
+    active: true,
+    limit: 100,
+  });
+  
+  const existingPrice = prices.data.find(p => 
+    p.unit_amount === MONTHLY_PRICE * 100 && 
+    p.recurring?.interval === 'month' &&
+    p.currency === 'usd'
+  );
+  
+  if (existingPrice) {
+    return existingPrice.id;
+  }
+  
+  const product = await stripe.products.create({
+    name: productName,
+    description: 'Unlimited group classes for English & Math',
+  });
+  
+  const price = await stripe.prices.create({
+    product: product.id,
+    unit_amount: MONTHLY_PRICE * 100,
+    currency: 'usd',
+    recurring: { interval: 'month' },
+  });
+  
+  return price.id;
+}
+
 // 生徒の紹介割引率を取得
 async function getStudentDiscount(studentId: string): Promise<number> {
   try {
-    // 生徒の紹介コードを取得
-    const { data: codeData } = await supabase
-      .from('referral_codes')
-      .select('code')
-      .eq('student_id', studentId)
-      .single();
-    
-    if (!codeData) return 0;
-    
-    // その紹介コードでのactive紹介数を取得
-    const { data: referrals } = await supabase
+    const { count } = await supabase
       .from('referrals')
-      .select('id')
-      .eq('referral_code', codeData.code)
+      .select('*', { count: 'exact', head: true })
+      .eq('referrer_student_id', studentId)
       .eq('status', 'active');
     
-    const activeCount = referrals?.length || 0;
+    const activeCount = count || 0;
     return Math.min(activeCount * 20, 100);
   } catch (error) {
     console.error('Error getting student discount:', error);
@@ -65,31 +90,21 @@ async function getStudentDiscount(studentId: string): Promise<number> {
 
 export async function POST(request: NextRequest) {
   try {
-    const { priceId, customerEmail, studentId, userId } = await request.json();
+    const { customerEmail, studentId, userId, discountPercent: providedDiscount } = await request.json();
 
-    if (!priceId) {
-      return NextResponse.json(
-        { error: 'Price ID is required' },
-        { status: 400 }
-      );
-    }
-
-    // 割引率を取得
-    let discountPercent = 0;
-    if (studentId) {
+    let discountPercent = providedDiscount ?? 0;
+    if (studentId && discountPercent === 0) {
       discountPercent = await getStudentDiscount(studentId);
     }
 
-    // 100%割引の場合は特別処理
     if (discountPercent === 100) {
-      // 100%割引の場合、Stripeセッションは不要
-      // 生徒のステータスを直接更新
       if (studentId) {
         await supabase
           .from('students')
           .update({ 
             subscription_status: 'active',
-            stripe_subscription_id: 'free_referral_100'
+            stripe_subscription_id: 'free_referral_100',
+            monthly_price: 0,
           })
           .eq('id', studentId);
       }
@@ -101,27 +116,27 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // クーポンを取得または作成
+    const monthlyPriceId = await getOrCreateMonthlyPrice();
     const couponId = await getOrCreateCoupon(discountPercent);
 
-    // Checkout Session作成オプション
-    const sessionOptions: Stripe.Checkout.SessionCreateParams = {
+    const sessionParams: any = {
       payment_method_types: ['card'],
       mode: 'subscription',
       customer_email: customerEmail,
       client_reference_id: studentId,
       line_items: [
         {
-          price: priceId,
+          price: monthlyPriceId,
           quantity: 1,
         },
       ],
       subscription_data: {
-        trial_period_days: 14,
+        trial_period_days: TRIAL_DAYS,
         metadata: {
           student_id: studentId || '',
           user_id: userId || '',
           discount_percent: discountPercent.toString(),
+          enrollment_fee: ENROLLMENT_FEE.toString(),
         },
       },
       success_url: `${request.headers.get('origin')}/dashboard?success=true`,
@@ -129,16 +144,25 @@ export async function POST(request: NextRequest) {
       metadata: {
         student_id: studentId || '',
         user_id: userId || '',
+        enrollment_fee: ENROLLMENT_FEE.toString(),
       },
     };
 
-    // 割引がある場合はクーポンを適用
     if (couponId) {
-      sessionOptions.discounts = [{ coupon: couponId }];
+      sessionParams.discounts = [{ coupon: couponId }];
     }
 
-    // Create Stripe checkout session
-    const session = await stripe.checkout.sessions.create(sessionOptions);
+    const session = await stripe.checkout.sessions.create(sessionParams);
+
+    if (studentId) {
+      const discountedPrice = MONTHLY_PRICE * (1 - discountPercent / 100);
+      await supabase
+        .from('students')
+        .update({ 
+          monthly_price: discountedPrice,
+        })
+        .eq('id', studentId);
+    }
 
     return NextResponse.json({ 
       url: session.url,

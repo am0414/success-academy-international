@@ -19,6 +19,24 @@ const getSupabase = () => {
   );
 };
 
+// Helper function to get subscription ID from invoice (handles different API versions)
+function getSubscriptionIdFromInvoice(invoice: Stripe.Invoice): string | null {
+  // Try newer API structure first
+  const parent = (invoice as any).parent;
+  if (parent?.subscription_details?.subscription) {
+    return parent.subscription_details.subscription;
+  }
+  // Fallback to older structure
+  const sub = (invoice as any).subscription;
+  if (typeof sub === 'string') {
+    return sub;
+  }
+  if (sub?.id) {
+    return sub.id;
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const stripe = getStripe();
   const supabase = getSupabase();
@@ -65,8 +83,12 @@ export async function POST(request: NextRequest) {
         await handleSubscriptionDeleted(supabase, stripe, event.data.object as Stripe.Subscription);
         break;
 
+      case 'invoice.created':
+        await handleInvoiceCreated(supabase, stripe, event.data.object as Stripe.Invoice);
+        break;
+
       case 'invoice.payment_succeeded':
-        await handlePaymentSucceeded(supabase, event.data.object as Stripe.Invoice);
+        await handlePaymentSucceeded(supabase, stripe, event.data.object as Stripe.Invoice);
         break;
 
       case 'invoice.payment_failed':
@@ -107,7 +129,7 @@ async function handleCheckoutCompleted(supabase: any, session: Stripe.Checkout.S
     .update({
       stripe_customer_id: customerId,
       stripe_subscription_id: subscriptionId,
-      subscription_status: 'active',
+      subscription_status: 'trialing',
       trial_start_date: new Date().toISOString(),
       trial_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date().toISOString(),
@@ -190,11 +212,84 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
   }
 }
 
-async function handlePaymentSucceeded(supabase: any, invoice: Stripe.Invoice) {
+// ★ 新規追加: トライアル後の最初のinvoiceに入会費を追加
+async function handleInvoiceCreated(supabase: any, stripe: Stripe, invoice: Stripe.Invoice) {
+  console.log('Invoice created:', invoice.id);
+  console.log('Invoice status:', invoice.status);
+  console.log('Billing reason:', invoice.billing_reason);
+  
+  // draft状態のinvoiceのみ処理（編集可能な状態）
+  if (invoice.status !== 'draft') {
+    console.log('Invoice is not draft, skipping enrollment fee');
+    return;
+  }
+
+  // subscription_cycleの最初のinvoiceのみ（トライアル後の最初の請求）
+  if (invoice.billing_reason !== 'subscription_cycle') {
+    console.log('Not a subscription cycle invoice, skipping');
+    return;
+  }
+
+  const subscriptionId = getSubscriptionIdFromInvoice(invoice);
+
+  if (!subscriptionId) {
+    console.log('No subscription ID in invoice');
+    return;
+  }
+
+  // 生徒情報を取得
+  const { data: studentData } = await supabase
+    .from('students')
+    .select('id, enrollment_fee_charged')
+    .eq('stripe_subscription_id', subscriptionId)
+    .single();
+
+  if (!studentData) {
+    console.log('No student found for subscription:', subscriptionId);
+    return;
+  }
+
+  // 入会費がまだ請求されていない場合のみ追加
+  if (studentData.enrollment_fee_charged) {
+    console.log('Enrollment fee already charged for student:', studentData.id);
+    return;
+  }
+
+  console.log('Adding enrollment fee $50 to invoice for student:', studentData.id);
+  
+  try {
+    // Invoice itemを追加（$50 = 5000 cents）
+    await stripe.invoiceItems.create({
+      customer: invoice.customer as string,
+      invoice: invoice.id as string,
+      amount: 5000,
+      currency: 'usd',
+      description: 'Enrollment Fee (One-time)',
+    });
+
+    // DBを更新：入会費請求済みフラグを立てる
+    const { error } = await supabase
+      .from('students')
+      .update({
+        enrollment_fee_charged: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', studentData.id);
+
+    if (error) {
+      console.error('Error updating enrollment_fee_charged:', error);
+    } else {
+      console.log('Enrollment fee added successfully! Invoice total will be $250');
+    }
+  } catch (error) {
+    console.error('Error adding enrollment fee to invoice:', error);
+  }
+}
+
+async function handlePaymentSucceeded(supabase: any, stripe: Stripe, invoice: Stripe.Invoice) {
   console.log('Payment succeeded:', invoice.id);
 
-  const subscriptionId = (invoice as any).parent?.subscription_details?.subscription 
-    || (invoice as any).subscription as string | null;
+  const subscriptionId = getSubscriptionIdFromInvoice(invoice);
 
   if (!subscriptionId) {
     console.error('No subscription ID in invoice');
@@ -230,8 +325,7 @@ async function handlePaymentSucceeded(supabase: any, invoice: Stripe.Invoice) {
     await updateReferralStatus(supabase, studentData.parent_id, 'active');
     
     if (referralData?.referral_code) {
-      // Note: stripe is not available here, would need to pass it
-      console.log('Referrer discount update skipped in this context');
+      await updateReferrerDiscount(supabase, stripe, referralData.referral_code);
     }
   }
 }
@@ -239,11 +333,7 @@ async function handlePaymentSucceeded(supabase: any, invoice: Stripe.Invoice) {
 async function handlePaymentFailed(supabase: any, invoice: Stripe.Invoice) {
   console.log('Payment failed:', invoice.id);
 
-  const subscriptionId = (invoice as any).subscription 
-    ? (typeof (invoice as any).subscription === 'string' 
-        ? (invoice as any).subscription 
-        : (invoice as any).subscription.id)
-    : null;
+  const subscriptionId = getSubscriptionIdFromInvoice(invoice);
 
   if (!subscriptionId) {
     console.error('No subscription ID in invoice');
@@ -328,11 +418,7 @@ async function getOrCreateCoupon(stripe: Stripe, discountPercent: number): Promi
 async function handleInvoiceUpcoming(supabase: any, stripe: Stripe, invoice: Stripe.Invoice) {
   console.log('Invoice upcoming - recalculating discount');
   
-  const subscriptionId = (invoice as any).subscription 
-    ? (typeof (invoice as any).subscription === 'string' 
-        ? (invoice as any).subscription 
-        : (invoice as any).subscription.id)
-    : null;
+  const subscriptionId = getSubscriptionIdFromInvoice(invoice);
 
   if (!subscriptionId) {
     console.log('No subscription ID in upcoming invoice');
