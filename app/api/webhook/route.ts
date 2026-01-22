@@ -129,9 +129,7 @@ async function handleCheckoutCompleted(supabase: any, session: Stripe.Checkout.S
     .update({
       stripe_customer_id: customerId,
       stripe_subscription_id: subscriptionId,
-      subscription_status: 'trialing',
-      trial_start_date: new Date().toISOString(),
-      trial_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      subscription_status: 'trial',
       updated_at: new Date().toISOString(),
     })
     .eq('id', session.client_reference_id || '')
