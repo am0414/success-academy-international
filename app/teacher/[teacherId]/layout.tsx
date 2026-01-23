@@ -91,7 +91,7 @@ export default function TeacherLayout({
             </div>
             {sidebarOpen && (
               <div>
-                <span className="font-semibold text-slate-800">Success Academy</span>
+                <span className="font-semibold text-slate-800">Mercee Academy</span>
                 <p className="text-xs text-indigo-600">Teacher Portal</p>
               </div>
             )}

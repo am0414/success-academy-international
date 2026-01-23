@@ -166,7 +166,7 @@ export default function StudentLayout({
               <span className="text-white font-bold text-lg">S</span>
             </div>
             {sidebarOpen && (
-              <span className="font-semibold text-slate-800">Success Academy</span>
+              <span className="font-semibold text-slate-800">Mercee Academy</span>
             )}
           </div>
         </div>
