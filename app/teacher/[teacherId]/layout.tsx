@@ -87,7 +87,7 @@ export default function TeacherLayout({
         <div className="p-4 border-b border-slate-200">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-lg">S</span>
+              <span className="text-white font-bold text-lg">M</span>
             </div>
             {sidebarOpen && (
               <div>
