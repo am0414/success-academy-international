@@ -92,7 +92,7 @@ function LoginForm() {
     <div className="min-h-screen bg-gradient-to-br from-purple-600 to-purple-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md">
         <h1 className="text-3xl font-bold text-center text-gray-800 mb-2">
-          Success Academy Global
+          Mercee Academy
         </h1>
         <p className="text-gray-600 text-center mb-8">
           {isSignUp ? 'Create your account' : 'Welcome back!'}

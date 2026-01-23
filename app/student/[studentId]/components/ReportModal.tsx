@@ -96,7 +96,7 @@ export default function ReportModal({ studentName, attendanceHistory, onClose }:
       // Header
       doc.setFontSize(24);
       doc.setTextColor(59, 130, 246);
-      doc.text('Success Academy International', pageWidth / 2, 25, { align: 'center' });
+      doc.text('Mercee Academy', pageWidth / 2, 25, { align: 'center' });
       
       doc.setFontSize(16);
       doc.setTextColor(60, 60, 60);
@@ -217,7 +217,7 @@ export default function ReportModal({ studentName, attendanceHistory, onClose }:
         doc.setFontSize(8);
         doc.setTextColor(150, 150, 150);
         doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, 287, { align: 'center' });
-        doc.text('Success Academy International', pageWidth / 2, 292, { align: 'center' });
+        doc.text('Mercee Academy', pageWidth / 2, 292, { align: 'center' });
       }
       
       // Save
@@ -251,7 +251,7 @@ export default function ReportModal({ studentName, attendanceHistory, onClose }:
             new Paragraph({
               children: [
                 new TextRun({
-                  text: 'Success Academy International',
+                  text: 'Mercee Academy',
                   bold: true,
                   size: 36,
                   color: '3B82F6',

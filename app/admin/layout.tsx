@@ -22,7 +22,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <span className="text-2xl">⚙️</span>
             Admin Panel
           </h1>
-          <p className="text-slate-400 text-sm mt-1">Success Academy</p>
+          <p className="text-slate-400 text-sm mt-1">Mercee Academy</p>
         </div>
 
         <nav className="mt-4">

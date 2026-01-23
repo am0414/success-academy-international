@@ -171,7 +171,7 @@ function CheckoutContent() {
           {/* ヘッダー */}
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6">
             <h1 className="text-2xl font-bold text-white mb-1">Complete Enrollment</h1>
-            <p className="text-blue-200">Subscribe to Success Academy International</p>
+            <p className="text-blue-200">Subscribe to Mercee Academy</p>
           </div>
 
           <div className="p-8">
