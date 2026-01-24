@@ -95,6 +95,28 @@ export default function MyPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ★ 追加: Manage Subscription 関数
+  const handleManageSubscription = async () => {
+    try {
+      const response = await fetch('/api/create-portal-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert('Unable to open subscription management. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Something went wrong. Please try again.');
+    }
+  };
+
   const getAvatarColor = (color: string) => {
     const colors: { [key: string]: string } = {
       blue: 'from-blue-400 to-blue-600',
@@ -260,9 +282,12 @@ export default function MyPage() {
             </h2>
             <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl p-4 text-white mb-4">
               <p className="text-sm text-emerald-100">Current Plan</p>
-              <p className="text-xl font-bold">Unlimited Classes - $150/month</p>
+              <p className="text-xl font-bold">Unlimited Classes - $200/month</p>
             </div>
-            <button className="w-full py-3 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium">
+            <button 
+              onClick={handleManageSubscription}
+              className="w-full py-3 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium"
+            >
               Manage Subscription
             </button>
           </div>
