@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         break;
 
       case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(supabase, event.data.object as Stripe.Subscription);
+        await handleSubscriptionUpdated(supabase, stripe, event.data.object as Stripe.Subscription);
         break;
 
       case 'customer.subscription.deleted':
@@ -178,8 +178,11 @@ async function handleSubscriptionCreated(supabase: any, subscription: Stripe.Sub
     .eq('stripe_subscription_id', subscription.id);
 }
 
-async function handleSubscriptionUpdated(supabase: any, subscription: Stripe.Subscription) {
+async function handleSubscriptionUpdated(supabase: any, stripe: Stripe, subscription: Stripe.Subscription) {
   console.log('Subscription updated:', subscription.id);
+  console.log('cancel_at_period_end:', subscription.cancel_at_period_end);
+
+  // DB更新
   await supabase
     .from('students')
     .update({
@@ -187,18 +190,41 @@ async function handleSubscriptionUpdated(supabase: any, subscription: Stripe.Sub
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscription.id);
+
+  // ★ キャンセル予約された場合、pending invoice items を削除
+  if (subscription.cancel_at_period_end) {
+    const customerId = typeof subscription.customer === 'string' 
+      ? subscription.customer 
+      : subscription.customer.id;
+
+    try {
+      const pendingItems = await stripe.invoiceItems.list({
+        customer: customerId,
+        pending: true,
+      });
+
+      for (const item of pendingItems.data) {
+        await stripe.invoiceItems.del(item.id);
+        console.log('Deleted pending invoice item:', item.id, item.description);
+      }
+      console.log('All pending invoice items deleted for customer:', customerId);
+    } catch (err) {
+      console.error('Error deleting pending invoice items:', err);
+    }
+  }
 }
 
 async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscription: Stripe.Subscription) {
   console.log('Subscription deleted:', subscription.id);
 
-  // ★ 修正: id を追加で取得
+  // 生徒情報を取得
   const { data: studentData } = await supabase
     .from('students')
-    .select('id, parent_id')
+    .select('id, parent_id, stripe_customer_id')
     .eq('stripe_subscription_id', subscription.id)
     .single();
 
+  // DB更新
   await supabase
     .from('students')
     .update({
@@ -207,6 +233,24 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
     })
     .eq('stripe_subscription_id', subscription.id);
 
+  // Pending invoice items を削除（念のため）
+  if (studentData?.stripe_customer_id) {
+    try {
+      const pendingItems = await stripe.invoiceItems.list({
+        customer: studentData.stripe_customer_id,
+        pending: true,
+      });
+
+      for (const item of pendingItems.data) {
+        await stripe.invoiceItems.del(item.id);
+        console.log('Deleted pending invoice item:', item.id, item.description);
+      }
+    } catch (err) {
+      console.error('Error deleting pending invoice items:', err);
+    }
+  }
+
+  // Referral status 更新
   if (studentData?.id) {
     const { data: referralData } = await supabase
       .from('referrals')
@@ -214,7 +258,6 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
       .eq('referred_student_id', studentData.id)
       .single();
     
-    // ★ 修正: student_id で更新
     await updateReferralStatus(supabase, studentData.id, 'cancelled');
     
     if (referralData?.referral_code) {
@@ -229,7 +272,6 @@ async function handlePaymentSucceeded(supabase: any, stripe: Stripe, invoice: St
   const subscriptionId = getSubscriptionIdFromInvoice(invoice);
   if (!subscriptionId) return;
 
-  // ★ 修正: id を追加で取得
   const { data: studentData } = await supabase
     .from('students')
     .select('id, parent_id')
@@ -252,7 +294,6 @@ async function handlePaymentSucceeded(supabase: any, stripe: Stripe, invoice: St
       .eq('referred_student_id', studentData.id)
       .single();
     
-    // ★ 修正: student_id で更新
     await updateReferralStatus(supabase, studentData.id, 'active');
     
     if (referralData?.referral_code) {
@@ -276,7 +317,6 @@ async function handlePaymentFailed(supabase: any, invoice: Stripe.Invoice) {
     .eq('stripe_subscription_id', subscriptionId);
 }
 
-// ★ 修正: referred_student_id で更新
 async function updateReferralStatus(supabase: any, studentId: string, newStatus: string) {
   await supabase
     .from('referrals')
