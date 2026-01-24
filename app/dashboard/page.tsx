@@ -127,13 +127,15 @@ export default function DashboardPage() {
     );
   }
 
-  // ReferralSection用のデータを準備
-  const studentBillingData = students.map(s => ({
-    id: s.id,
-    name: s.name,
-    monthlyPrice: 200, // 基本料金
-    discountPercent: s.discount_percent || 0,
-  }));
+  // ReferralSection用のデータを準備（キャンセル済みは除外）
+  const studentBillingData = students
+    .filter(s => s.subscription_status !== 'cancelled')
+    .map(s => ({
+      id: s.id,
+      name: s.name,
+      monthlyPrice: 200,
+      discountPercent: s.discount_percent || 0,
+    }));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
