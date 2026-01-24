@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     // Handle different event types
     switch (event.type) {
       case 'checkout.session.completed':
-        await handleCheckoutCompleted(supabase, event.data.object as Stripe.Checkout.Session);
+        await handleCheckoutCompleted(supabase, stripe, event.data.object as Stripe.Checkout.Session);
         break;
 
       case 'customer.subscription.created':
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function handleCheckoutCompleted(supabase: any, session: Stripe.Checkout.Session) {
+async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: Stripe.Checkout.Session) {
   console.log('Checkout completed:', session.id);
   console.log('client_reference_id:', session.client_reference_id);
   
@@ -139,6 +139,30 @@ async function handleCheckoutCompleted(supabase: any, session: Stripe.Checkout.S
     console.error('Error updating student:', error);
   } else {
     console.log('Update result:', data);
+  }
+
+  // ★ 入会費を pending invoice item として追加
+  // これはトライアル後の最初の invoice に自動で含まれる
+  if (customerId && session.client_reference_id) {
+    try {
+      await stripe.invoiceItems.create({
+        customer: customerId,
+        amount: 5000, // $50
+        currency: 'usd',
+        description: 'Enrollment Fee (One-time)',
+      });
+      
+      console.log('Enrollment fee invoice item created for customer:', customerId);
+      
+      // DBも更新
+      await supabase
+        .from('students')
+        .update({ enrollment_fee_charged: true })
+        .eq('id', session.client_reference_id);
+        
+    } catch (err) {
+      console.error('Error creating enrollment fee invoice item:', err);
+    }
   }
 }
 
@@ -210,105 +234,11 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
   }
 }
 
-// ★ トライアル後の最初のinvoiceに入会費を追加（二重追加防止版）
+// handleInvoiceCreated は削除 or 空にする（もう使わない）
 async function handleInvoiceCreated(supabase: any, stripe: Stripe, invoice: Stripe.Invoice) {
   console.log('Invoice created:', invoice.id);
-  console.log('Invoice status:', invoice.status);
-  console.log('Billing reason:', invoice.billing_reason);
-  
-  // draft状態のinvoiceのみ処理（編集可能な状態）
-  if (invoice.status !== 'draft') {
-    console.log('Invoice is not draft, skipping enrollment fee');
-    return;
-  }
-
-  // subscription_cycleの最初のinvoiceのみ（トライアル後の最初の請求）
-  if (invoice.billing_reason !== 'subscription_cycle') {
-    console.log('Not a subscription cycle invoice, skipping');
-    return;
-  }
-
-  const subscriptionId = getSubscriptionIdFromInvoice(invoice);
-
-  if (!subscriptionId) {
-    console.log('No subscription ID in invoice');
-    return;
-  }
-
-  // 生徒情報を取得
-  const { data: studentData } = await supabase
-    .from('students')
-    .select('id, enrollment_fee_charged')
-    .eq('stripe_subscription_id', subscriptionId)
-    .single();
-
-  if (!studentData) {
-    console.log('No student found for subscription:', subscriptionId);
-    return;
-  }
-
-  // 入会費がまだ請求されていない場合のみ追加
-  if (studentData.enrollment_fee_charged) {
-    console.log('Enrollment fee already charged for student:', studentData.id);
-    return;
-  }
-
-  // ★ 追加: invoice line items をチェック（二重追加防止）
-  const lineItems = invoice.lines?.data || [];
-  const hasEnrollmentFee = lineItems.some(
-    item => item.description === 'Enrollment Fee (One-time)'
-  );
-
-  if (hasEnrollmentFee) {
-    console.log('Enrollment fee already in invoice, updating DB flag');
-    await supabase
-      .from('students')
-      .update({ enrollment_fee_charged: true, updated_at: new Date().toISOString() })
-      .eq('id', studentData.id);
-    return;
-  }
-
-  // ★ 変更: 先にDBを更新（楽観的ロック）
-  const { data: updateResult, error: updateError } = await supabase
-    .from('students')
-    .update({
-      enrollment_fee_charged: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', studentData.id)
-    .eq('enrollment_fee_charged', false)
-    .select();
-
-  // 更新できなかった場合は他のプロセスが処理中
-  if (updateError || !updateResult || updateResult.length === 0) {
-    console.log('Could not acquire lock, another process may be handling this');
-    return;
-  }
-
-  console.log('Adding enrollment fee $50 to invoice for student:', studentData.id);
-  
-  try {
-    // Invoice itemを追加（$50 = 5000 cents）
-    await stripe.invoiceItems.create({
-      customer: invoice.customer as string,
-      invoice: invoice.id as string,
-      amount: 5000,
-      currency: 'usd',
-      description: 'Enrollment Fee (One-time)',
-    });
-
-    console.log('Enrollment fee added successfully! Invoice total will be $250');
-  } catch (error) {
-    console.error('Error adding enrollment fee to invoice:', error);
-    // 失敗したらDBを戻す
-    await supabase
-      .from('students')
-      .update({
-        enrollment_fee_charged: false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', studentData.id);
-  }
+  // 入会費は checkout 完了時に pending invoice item として追加済み
+  // ここでは何もしない
 }
 
 async function handlePaymentSucceeded(supabase: any, stripe: Stripe, invoice: Stripe.Invoice) {
