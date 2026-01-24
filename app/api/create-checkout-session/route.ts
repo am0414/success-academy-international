@@ -138,6 +138,19 @@ export async function POST(request: NextRequest) {
           discount_percent: discountPercent.toString(),
           enrollment_fee: ENROLLMENT_FEE.toString(),
         },
+        // ★ トライアル後の最初の invoice に入会費を追加
+        add_invoice_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: 'Enrollment Fee (One-time)',
+              },
+              unit_amount: ENROLLMENT_FEE * 100,
+            },
+            quantity: 1,
+          },
+        ],
       },
       success_url: `${request.headers.get('origin')}/dashboard?success=true`,
       cancel_url: `${request.headers.get('origin')}/checkout?cancelled=true&studentId=${studentId}`,
