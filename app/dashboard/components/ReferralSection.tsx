@@ -5,6 +5,7 @@ interface Referral {
   referred_name: string | null;
   status: 'pending' | 'trial' | 'active' | 'cancelled';
   created_at: string;
+  referrer_student_id?: string;
 }
 
 interface StudentBilling {
@@ -12,6 +13,7 @@ interface StudentBilling {
   name: string;
   monthlyPrice: number;
   discountPercent: number;
+  referralCount?: number;
 }
 
 interface ReferralSectionProps {
@@ -25,16 +27,17 @@ export default function ReferralSection({
 }: ReferralSectionProps) {
   const activeCount = referrals.filter(r => r.status === 'active').length;
   const trialCount = referrals.filter(r => r.status === 'trial').length;
-  const progressPercent = Math.min((activeCount / 5) * 100, 100);
   
   // 家族全体の請求を計算
   const familyBilling = students.map(student => {
     const discountAmount = (student.monthlyPrice * student.discountPercent) / 100;
     const finalPrice = student.monthlyPrice - discountAmount;
+    const referralCount = Math.floor(student.discountPercent / 20);
     return {
       ...student,
       finalPrice,
       discountAmount,
+      referralCount,
     };
   });
 
@@ -71,7 +74,7 @@ export default function ReferralSection({
             🎁 Referral Program
           </h2>
           <p className="text-indigo-200">
-            Invite friends and earn discounts on your subscription!
+            Each student can invite friends to earn their own discounts!
           </p>
         </div>
         
@@ -120,35 +123,48 @@ export default function ReferralSection({
         </div>
       </div>
 
-      {/* Progress to FREE */}
+      {/* Progress by Student */}
       <div className="bg-white/10 rounded-2xl p-6 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-medium">Progress to FREE subscription</span>
-          <span className="text-sm font-medium">{activeCount}/5 active referrals</span>
-        </div>
-        <div className="h-4 bg-white/20 rounded-full overflow-hidden mb-4">
-          <div 
-            className="h-full bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full transition-all duration-700 ease-out"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
+        <h3 className="text-lg font-semibold mb-4">📊 Progress by Student</h3>
+        <p className="text-sm text-indigo-200 mb-4">
+          Each student needs 5 referrals to get FREE subscription
+        </p>
         
-        <div className="flex justify-between text-xs">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <div 
-              key={i} 
-              className={`flex flex-col items-center transition-all ${i <= activeCount ? 'text-white scale-110' : 'text-white/40'}`}
-            >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 font-bold transition-all ${
-                i <= activeCount 
-                  ? 'bg-gradient-to-br from-yellow-400 to-orange-400 text-indigo-900 shadow-lg' 
-                  : 'bg-white/20'
-              }`}>
-                {i <= activeCount ? '✓' : i}
+        <div className="space-y-4">
+          {familyBilling.map(student => {
+            const progressPercent = Math.min((student.referralCount / 5) * 100, 100);
+            return (
+              <div key={student.id} className="bg-white/5 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">{student.name}</span>
+                  <span className="text-sm">
+                    {student.referralCount}/5 referrals 
+                    {student.discountPercent > 0 && (
+                      <span className="text-yellow-400 ml-2">({student.discountPercent}% off)</span>
+                    )}
+                  </span>
+                </div>
+                <div className="h-3 bg-white/20 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-700 ease-out ${
+                      student.discountPercent >= 100 
+                        ? 'bg-gradient-to-r from-green-400 to-emerald-400' 
+                        : 'bg-gradient-to-r from-yellow-400 to-orange-400'
+                    }`}
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-2 text-xs text-indigo-300">
+                  <span>0%</span>
+                  <span>20%</span>
+                  <span>40%</span>
+                  <span>60%</span>
+                  <span>80%</span>
+                  <span className="text-yellow-400 font-bold">FREE!</span>
+                </div>
               </div>
-              <span className="font-medium">{i * 20}%</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -157,7 +173,7 @@ export default function ReferralSection({
         <div className="bg-white/10 rounded-2xl p-5">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <span>👥</span>
-            Your Referrals
+            All Referrals
             <span className="ml-auto text-sm font-normal text-indigo-200">
               {activeCount} active, {trialCount} in trial
             </span>
