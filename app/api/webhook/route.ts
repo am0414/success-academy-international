@@ -210,7 +210,7 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
   }
 }
 
-// ★ 新規追加: トライアル後の最初のinvoiceに入会費を追加
+// ★ トライアル後の最初のinvoiceに入会費を追加（二重追加防止版）
 async function handleInvoiceCreated(supabase: any, stripe: Stripe, invoice: Stripe.Invoice) {
   console.log('Invoice created:', invoice.id);
   console.log('Invoice status:', invoice.status);
@@ -253,6 +253,38 @@ async function handleInvoiceCreated(supabase: any, stripe: Stripe, invoice: Stri
     return;
   }
 
+  // ★ 追加: invoice line items をチェック（二重追加防止）
+  const lineItems = invoice.lines?.data || [];
+  const hasEnrollmentFee = lineItems.some(
+    item => item.description === 'Enrollment Fee (One-time)'
+  );
+
+  if (hasEnrollmentFee) {
+    console.log('Enrollment fee already in invoice, updating DB flag');
+    await supabase
+      .from('students')
+      .update({ enrollment_fee_charged: true, updated_at: new Date().toISOString() })
+      .eq('id', studentData.id);
+    return;
+  }
+
+  // ★ 変更: 先にDBを更新（楽観的ロック）
+  const { data: updateResult, error: updateError } = await supabase
+    .from('students')
+    .update({
+      enrollment_fee_charged: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', studentData.id)
+    .eq('enrollment_fee_charged', false)
+    .select();
+
+  // 更新できなかった場合は他のプロセスが処理中
+  if (updateError || !updateResult || updateResult.length === 0) {
+    console.log('Could not acquire lock, another process may be handling this');
+    return;
+  }
+
   console.log('Adding enrollment fee $50 to invoice for student:', studentData.id);
   
   try {
@@ -265,22 +297,17 @@ async function handleInvoiceCreated(supabase: any, stripe: Stripe, invoice: Stri
       description: 'Enrollment Fee (One-time)',
     });
 
-    // DBを更新：入会費請求済みフラグを立てる
-    const { error } = await supabase
+    console.log('Enrollment fee added successfully! Invoice total will be $250');
+  } catch (error) {
+    console.error('Error adding enrollment fee to invoice:', error);
+    // 失敗したらDBを戻す
+    await supabase
       .from('students')
       .update({
-        enrollment_fee_charged: true,
+        enrollment_fee_charged: false,
         updated_at: new Date().toISOString(),
       })
       .eq('id', studentData.id);
-
-    if (error) {
-      console.error('Error updating enrollment_fee_charged:', error);
-    } else {
-      console.log('Enrollment fee added successfully! Invoice total will be $250');
-    }
-  } catch (error) {
-    console.error('Error adding enrollment fee to invoice:', error);
   }
 }
 
