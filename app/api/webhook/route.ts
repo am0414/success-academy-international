@@ -5,7 +5,6 @@ import { createClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// Lazy initialization to avoid build-time errors
 const getStripe = () => {
   return new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: '2025-12-15.clover',
@@ -19,21 +18,14 @@ const getSupabase = () => {
   );
 };
 
-// Helper function to get subscription ID from invoice (handles different API versions)
 function getSubscriptionIdFromInvoice(invoice: Stripe.Invoice): string | null {
-  // Try newer API structure first
   const parent = (invoice as any).parent;
   if (parent?.subscription_details?.subscription) {
     return parent.subscription_details.subscription;
   }
-  // Fallback to older structure
   const sub = (invoice as any).subscription;
-  if (typeof sub === 'string') {
-    return sub;
-  }
-  if (sub?.id) {
-    return sub.id;
-  }
+  if (typeof sub === 'string') return sub;
+  if (sub?.id) return sub.id;
   return null;
 }
 
@@ -47,25 +39,17 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get('stripe-signature');
 
     if (!signature) {
-      return NextResponse.json(
-        { error: 'No signature' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'No signature' }, { status: 400 });
     }
 
-    // Verify webhook signature
     let event: Stripe.Event;
     try {
       event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
     } catch (err: any) {
       console.error('Webhook signature verification failed:', err.message);
-      return NextResponse.json(
-        { error: 'Webhook signature verification failed' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 });
     }
 
-    // Handle different event types
     switch (event.type) {
       case 'checkout.session.completed':
         await handleCheckoutCompleted(supabase, stripe, event.data.object as Stripe.Checkout.Session);
@@ -81,10 +65,6 @@ export async function POST(request: NextRequest) {
 
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(supabase, stripe, event.data.object as Stripe.Subscription);
-        break;
-
-      case 'invoice.created':
-        await handleInvoiceCreated(supabase, stripe, event.data.object as Stripe.Invoice);
         break;
 
       case 'invoice.payment_succeeded':
@@ -106,25 +86,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true });
   } catch (error: any) {
     console.error('Webhook error:', error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: Stripe.Checkout.Session) {
   console.log('Checkout completed:', session.id);
-  console.log('client_reference_id:', session.client_reference_id);
   
   const subscriptionId = session.subscription as string;
   const customerId = session.customer as string;
-  
-  console.log('Updating student with id:', session.client_reference_id);
-  console.log('subscriptionId:', subscriptionId);
-  console.log('customerId:', customerId);
+  const studentId = session.client_reference_id;
 
-  const { error, data } = await supabase
+  console.log('studentId:', studentId, 'customerId:', customerId);
+
+  // 1. DB更新
+  const { error } = await supabase
     .from('students')
     .update({
       stripe_customer_id: customerId,
@@ -132,70 +108,90 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
       subscription_status: 'trial',
       updated_at: new Date().toISOString(),
     })
-    .eq('id', session.client_reference_id || '')
+    .eq('id', studentId || '')
     .select();
 
   if (error) {
     console.error('Error updating student:', error);
-  } else {
-    console.log('Update result:', data);
+    return;
   }
 
-  // ★ 入会費を pending invoice item として追加
-  // これはトライアル後の最初の invoice に自動で含まれる
-  if (customerId && session.client_reference_id) {
-    try {
-      await stripe.invoiceItems.create({
-        customer: customerId,
-        amount: 5000, // $50
-        currency: 'usd',
-        description: 'Enrollment Fee (One-time)',
-      });
-      
-      console.log('Enrollment fee invoice item created for customer:', customerId);
-      
-      // DBも更新
-      await supabase
-        .from('students')
-        .update({ enrollment_fee_charged: true })
-        .eq('id', session.client_reference_id);
-        
-    } catch (err) {
-      console.error('Error creating enrollment fee invoice item:', err);
+  // 2. 入会費を追加（二重チェック付き）
+  if (customerId && studentId) {
+    // DB で enrollment_fee_charged をチェック & 同時に true に更新（楽観的ロック）
+    const { data: updateResult, error: updateError } = await supabase
+      .from('students')
+      .update({ 
+        enrollment_fee_charged: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', studentId)
+      .eq('enrollment_fee_charged', false)  // false の場合のみ更新
+      .select();
+
+    if (updateError) {
+      console.error('Error updating enrollment_fee_charged:', updateError);
+      return;
+    }
+
+    // 更新できた = まだ追加されてない
+    if (updateResult && updateResult.length > 0) {
+      try {
+        // Stripe の pending invoice items を確認
+        const existingItems = await stripe.invoiceItems.list({
+          customer: customerId,
+          pending: true,
+        });
+
+        const hasEnrollmentFee = existingItems.data.some(
+          item => item.description === 'Enrollment Fee (One-time)'
+        );
+
+        if (!hasEnrollmentFee) {
+          await stripe.invoiceItems.create({
+            customer: customerId,
+            amount: 5000,
+            currency: 'usd',
+            description: 'Enrollment Fee (One-time)',
+          });
+          console.log('Enrollment fee added for customer:', customerId);
+        } else {
+          console.log('Enrollment fee already exists in pending items');
+        }
+      } catch (err) {
+        console.error('Error with enrollment fee:', err);
+        // 失敗したらDBを戻す
+        await supabase
+          .from('students')
+          .update({ enrollment_fee_charged: false })
+          .eq('id', studentId);
+      }
+    } else {
+      console.log('Enrollment fee already charged (DB flag was true)');
     }
   }
 }
 
 async function handleSubscriptionCreated(supabase: any, subscription: Stripe.Subscription) {
   console.log('Subscription created:', subscription.id);
-
-  const { error } = await supabase
+  await supabase
     .from('students')
     .update({
       subscription_status: subscription.status,
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscription.id);
-
-  if (error) {
-    console.error('Error updating subscription:', error);
-  }
 }
 
 async function handleSubscriptionUpdated(supabase: any, subscription: Stripe.Subscription) {
   console.log('Subscription updated:', subscription.id);
-
-  const { error } = await supabase
+  await supabase
     .from('students')
     .update({
       subscription_status: subscription.status,
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscription.id);
-
-  if (error) {
-    console.error('Error updating subscription:', error);
-  }
 }
 
 async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscription: Stripe.Subscription) {
@@ -207,17 +203,13 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
     .eq('stripe_subscription_id', subscription.id)
     .single();
 
-  const { error } = await supabase
+  await supabase
     .from('students')
     .update({
       subscription_status: 'cancelled',
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscription.id);
-
-  if (error) {
-    console.error('Error updating subscription:', error);
-  }
 
   if (studentData?.parent_id) {
     const { data: referralData } = await supabase
@@ -234,22 +226,11 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
   }
 }
 
-// handleInvoiceCreated は削除 or 空にする（もう使わない）
-async function handleInvoiceCreated(supabase: any, stripe: Stripe, invoice: Stripe.Invoice) {
-  console.log('Invoice created:', invoice.id);
-  // 入会費は checkout 完了時に pending invoice item として追加済み
-  // ここでは何もしない
-}
-
 async function handlePaymentSucceeded(supabase: any, stripe: Stripe, invoice: Stripe.Invoice) {
   console.log('Payment succeeded:', invoice.id);
 
   const subscriptionId = getSubscriptionIdFromInvoice(invoice);
-
-  if (!subscriptionId) {
-    console.error('No subscription ID in invoice');
-    return;
-  }
+  if (!subscriptionId) return;
 
   const { data: studentData } = await supabase
     .from('students')
@@ -257,7 +238,7 @@ async function handlePaymentSucceeded(supabase: any, stripe: Stripe, invoice: St
     .eq('stripe_subscription_id', subscriptionId)
     .single();
 
-  const { error } = await supabase
+  await supabase
     .from('students')
     .update({
       subscription_status: 'active',
@@ -265,10 +246,6 @@ async function handlePaymentSucceeded(supabase: any, stripe: Stripe, invoice: St
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscriptionId);
-
-  if (error) {
-    console.error('Error updating payment status:', error);
-  }
 
   if (studentData?.parent_id) {
     const { data: referralData } = await supabase
@@ -289,27 +266,19 @@ async function handlePaymentFailed(supabase: any, invoice: Stripe.Invoice) {
   console.log('Payment failed:', invoice.id);
 
   const subscriptionId = getSubscriptionIdFromInvoice(invoice);
+  if (!subscriptionId) return;
 
-  if (!subscriptionId) {
-    console.error('No subscription ID in invoice');
-    return;
-  }
-
-  const { error } = await supabase
+  await supabase
     .from('students')
     .update({
       subscription_status: 'past_due',
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscriptionId);
-
-  if (error) {
-    console.error('Error updating payment status:', error);
-  }
 }
 
 async function updateReferralStatus(supabase: any, userId: string, newStatus: string) {
-  const { error } = await supabase
+  await supabase
     .from('referrals')
     .update({
       status: newStatus,
@@ -317,12 +286,6 @@ async function updateReferralStatus(supabase: any, userId: string, newStatus: st
       cancelled_at: newStatus === 'cancelled' ? new Date().toISOString() : null,
     })
     .eq('referred_user_id', userId);
-
-  if (error) {
-    console.error('Error updating referral status:', error);
-  } else {
-    console.log(`Referral status updated to ${newStatus} for user ${userId}`);
-  }
 }
 
 async function getActiveReferralCount(supabase: any, studentId: string): Promise<number> {
@@ -343,7 +306,6 @@ async function getActiveReferralCount(supabase: any, studentId: string): Promise
     
     return referrals?.length || 0;
   } catch (error) {
-    console.error('Error getting active referral count:', error);
     return 0;
   }
 }
@@ -374,11 +336,7 @@ async function handleInvoiceUpcoming(supabase: any, stripe: Stripe, invoice: Str
   console.log('Invoice upcoming - recalculating discount');
   
   const subscriptionId = getSubscriptionIdFromInvoice(invoice);
-
-  if (!subscriptionId) {
-    console.log('No subscription ID in upcoming invoice');
-    return;
-  }
+  if (!subscriptionId) return;
 
   const { data: studentData } = await supabase
     .from('students')
@@ -386,26 +344,17 @@ async function handleInvoiceUpcoming(supabase: any, stripe: Stripe, invoice: Str
     .eq('stripe_subscription_id', subscriptionId)
     .single();
 
-  if (!studentData) {
-    console.log('No student found for subscription:', subscriptionId);
-    return;
-  }
+  if (!studentData) return;
 
   const activeCount = await getActiveReferralCount(supabase, studentData.id);
   const newDiscountPercent = Math.min(activeCount * 20, 100);
-  
-  console.log(`Student ${studentData.id}: ${activeCount} active referrals = ${newDiscountPercent}% discount`);
 
   try {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    
-    const currentDiscount = (subscription as any).discount;
-    const currentPercent = currentDiscount?.coupon?.percent_off || 0;
+    const currentPercent = (subscription as any).discount?.coupon?.percent_off || 0;
     
     if (currentPercent !== newDiscountPercent) {
-      console.log(`Updating discount: ${currentPercent}% -> ${newDiscountPercent}%`);
-      
-      if (currentDiscount) {
+      if ((subscription as any).discount) {
         await stripe.subscriptions.deleteDiscount(subscriptionId);
       }
       
@@ -425,10 +374,6 @@ async function handleInvoiceUpcoming(supabase: any, stripe: Stripe, invoice: Str
           updated_at: new Date().toISOString(),
         })
         .eq('id', studentData.id);
-        
-      console.log(`Discount updated successfully for student ${studentData.id}`);
-    } else {
-      console.log('Discount unchanged, no update needed');
     }
   } catch (error) {
     console.error('Error updating subscription discount:', error);
@@ -443,35 +388,22 @@ async function updateReferrerDiscount(supabase: any, stripe: Stripe, referralCod
       .eq('code', referralCode)
       .single();
     
-    if (!codeData) {
-      console.log('No referral code found:', referralCode);
-      return;
-    }
-    
-    const studentId = codeData.student_id;
+    if (!codeData) return;
     
     const { data: studentData } = await supabase
       .from('students')
       .select('stripe_subscription_id')
-      .eq('id', studentId)
+      .eq('id', codeData.student_id)
       .single();
     
-    if (!studentData?.stripe_subscription_id) {
-      console.log('No subscription for student:', studentId);
-      return;
-    }
+    if (!studentData?.stripe_subscription_id) return;
     
-    const activeCount = await getActiveReferralCount(supabase, studentId);
+    const activeCount = await getActiveReferralCount(supabase, codeData.student_id);
     const newDiscountPercent = Math.min(activeCount * 20, 100);
-    
-    console.log(`Referrer ${studentId}: ${activeCount} active = ${newDiscountPercent}%`);
     
     const subscriptionId = studentData.stripe_subscription_id;
     
-    if (subscriptionId === 'free_referral_100') {
-      console.log('Free subscription, skipping Stripe update');
-      return;
-    }
+    if (subscriptionId === 'free_referral_100') return;
     
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     const currentPercent = (subscription as any).discount?.coupon?.percent_off || 0;
@@ -496,9 +428,7 @@ async function updateReferrerDiscount(supabase: any, stripe: Stripe, referralCod
           monthly_price: Math.round(150 * (1 - newDiscountPercent / 100)),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', studentId);
-        
-      console.log(`Referrer discount updated: ${currentPercent}% -> ${newDiscountPercent}%`);
+        .eq('id', codeData.student_id);
     }
   } catch (error) {
     console.error('Error updating referrer discount:', error);
