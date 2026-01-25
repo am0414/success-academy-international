@@ -181,6 +181,7 @@ async function handleSubscriptionCreated(supabase: any, subscription: Stripe.Sub
 async function handleSubscriptionUpdated(supabase: any, stripe: Stripe, subscription: Stripe.Subscription) {
   console.log('Subscription updated:', subscription.id);
   console.log('cancel_at_period_end:', subscription.cancel_at_period_end);
+  console.log('cancel_at:', subscription.cancel_at);
 
   // DB更新
   await supabase
@@ -192,7 +193,10 @@ async function handleSubscriptionUpdated(supabase: any, stripe: Stripe, subscrip
     .eq('stripe_subscription_id', subscription.id);
 
   // ★ キャンセル予約された場合、pending invoice items を削除
-  if (subscription.cancel_at_period_end) {
+  // cancel_at_period_end または cancel_at がある場合
+  if (subscription.cancel_at_period_end || subscription.cancel_at) {
+    console.log('Subscription is scheduled for cancellation, deleting pending invoice items');
+    
     const customerId = typeof subscription.customer === 'string' 
       ? subscription.customer 
       : subscription.customer.id;
@@ -202,6 +206,8 @@ async function handleSubscriptionUpdated(supabase: any, stripe: Stripe, subscrip
         customer: customerId,
         pending: true,
       });
+
+      console.log('Found pending items:', pendingItems.data.length);
 
       for (const item of pendingItems.data) {
         await stripe.invoiceItems.del(item.id);
