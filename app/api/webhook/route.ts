@@ -254,7 +254,6 @@ async function handleSubscriptionUpdated(supabase: any, stripe: Stripe, subscrip
     .eq('stripe_subscription_id', subscription.id);
 
   // ★ キャンセル予約された場合、pending invoice items を削除
-  // cancel_at_period_end または cancel_at がある場合
   if (subscription.cancel_at_period_end || subscription.cancel_at) {
     console.log('Subscription is scheduled for cancellation, deleting pending invoice items');
     
@@ -296,7 +295,7 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
     .from('students')
     .update({
       subscription_status: 'cancelled',
-      enrollment_fee_charged: false,  // ★ 再登録時に入会費を請求するためリセット
+      enrollment_fee_charged: false,  // 再登録時に入会費を請求するためリセット
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscription.id);
@@ -320,6 +319,7 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
 
   // Referral status 更新
   if (studentData?.id) {
+    // 紹介された側としての referral を cancelled に
     const { data: referralData } = await supabase
       .from('referrals')
       .select('referral_code')
@@ -331,6 +331,16 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
     if (referralData?.referral_code) {
       await updateReferrerDiscount(supabase, stripe, referralData.referral_code);
     }
+
+    // ★ 追加: 紹介者としての referrals も cancelled に
+    await supabase
+      .from('referrals')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+      })
+      .eq('referrer_student_id', studentData.id);
+    console.log('Referrals as referrer cancelled for student:', studentData.id);
   }
 }
 
