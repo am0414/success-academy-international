@@ -491,7 +491,7 @@ async function handleInvoiceUpcoming(supabase: any, stripe: Stripe, invoice: Str
             discounts: [{ coupon: couponId }],
           });
         }
-      }
+      }　
       
       await supabase
         .from('students')
