@@ -105,13 +105,21 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
   console.log('studentId:', studentId, 'customerId:', customerId);
   console.log('enrollmentFee:', enrollmentFee / 100, 'referrerStudentId:', referrerStudentId, 'codeType:', codeType);
 
+  // ★ Stripe から subscription を取得して実際のステータスを確認
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  const actualStatus = subscription.status; // 'trialing' or 'active'
+  
+  // Stripe のステータスを DB 用に変換
+  const dbStatus = actualStatus === 'trialing' ? 'trial' : actualStatus;
+  console.log('Stripe status:', actualStatus, '→ DB status:', dbStatus);
+
   const { error } = await supabase
     .from('students')
     .update({
       stripe_customer_id: customerId,
       stripe_subscription_id: subscriptionId,
-      subscription_status: 'trial',
-      subscription_start_date: new Date().toISOString(),  // ★ 追加: 登録日を記録
+      subscription_status: dbStatus,  // ★ 実際のステータスを使用
+      subscription_start_date: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq('id', studentId || '')
@@ -154,7 +162,7 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
             referred_student_id: studentId,
             referred_name: studentData?.name || 'Unknown',
             referral_code: codeData.code,
-            status: 'trial',
+            status: dbStatus,  // ★ 実際のステータスを使用
             signed_up_at: new Date().toISOString(),
           });
         console.log('Referral created for student:', studentId);
