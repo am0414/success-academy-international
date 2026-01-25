@@ -111,6 +111,7 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
       stripe_customer_id: customerId,
       stripe_subscription_id: subscriptionId,
       subscription_status: 'trial',
+      subscription_start_date: new Date().toISOString(),  // ★ 追加: 登録日を記録
       updated_at: new Date().toISOString(),
     })
     .eq('id', studentId || '')
@@ -360,7 +361,6 @@ async function handlePaymentSucceeded(supabase: any, stripe: Stripe, invoice: St
     .from('students')
     .update({
       subscription_status: 'active',
-      subscription_start_date: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscriptionId);
