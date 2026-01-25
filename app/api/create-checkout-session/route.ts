@@ -136,6 +136,21 @@ export async function POST(request: NextRequest) {
   try {
     const { customerEmail, studentId, userId, discountPercent: providedDiscount, referralCode } = await request.json();
 
+    // ★ 再入会チェック（過去に subscription があったか）
+    let trialDays = TRIAL_DAYS; // デフォルト 14日
+    if (studentId) {
+      const { data: studentRecord } = await supabase
+        .from('students')
+        .select('subscription_start_date')
+        .eq('id', studentId)
+        .single();
+      
+      if (studentRecord?.subscription_start_date) {
+        trialDays = 0; // 過去に subscription があった → トライアルなし
+        console.log('Returning student - no trial period');
+      }
+    }
+
     // コードの割引を取得
     const codeInfo = await getCodeDiscount(referralCode || '');
     console.log('Code info:', codeInfo);
@@ -144,6 +159,7 @@ export async function POST(request: NextRequest) {
     const enrollmentFeeDiscount = codeInfo.enrollmentFeeDiscount;
     const finalEnrollmentFee = Math.round(ENROLLMENT_FEE * (1 - enrollmentFeeDiscount / 100));
     console.log('Enrollment fee:', ENROLLMENT_FEE, '→', finalEnrollmentFee, `(${enrollmentFeeDiscount}% OFF)`);
+    console.log('Trial days:', trialDays);
 
     let discountPercent = providedDiscount ?? 0;
     if (studentId && discountPercent === 0) {
@@ -184,7 +200,6 @@ export async function POST(request: NextRequest) {
         },
       ],
       subscription_data: {
-        trial_period_days: TRIAL_DAYS,
         metadata: {
           student_id: studentId || '',
           user_id: userId || '',
@@ -207,6 +222,11 @@ export async function POST(request: NextRequest) {
       },
     };
 
+    // ★ トライアル期間を設定（再入会は0日）
+    if (trialDays > 0) {
+      sessionParams.subscription_data.trial_period_days = trialDays;
+    }
+
     if (couponId) {
       sessionParams.discounts = [{ coupon: couponId }];
     }
@@ -228,6 +248,7 @@ export async function POST(request: NextRequest) {
       discountPercent,
       enrollmentFeeDiscount,
       finalEnrollmentFee,
+      trialDays,
     });
   } catch (error: any) {
     console.error('Checkout session error:', error);

@@ -8,6 +8,7 @@ interface Student {
   id: string;
   name: string;
   age: number;
+  subscription_start_date: string | null;
 }
 
 interface CheckoutInfo {
@@ -18,6 +19,7 @@ interface CheckoutInfo {
   discountedMonthlyPrice: number;
   firstPayment: number;
   activeReferrals: number;
+  isReturning: boolean;
 }
 
 interface CodeValidation {
@@ -56,13 +58,16 @@ function CheckoutContent() {
       // 生徒情報取得
       const { data: student, error: studentError } = await supabase
         .from('students')
-        .select('id, name, age')
+        .select('id, name, age, subscription_start_date')
         .eq('id', studentId)
         .single();
 
       if (studentError || !student) {
         throw new Error('Student not found');
       }
+
+      // 再入会チェック
+      const isReturning = !!student.subscription_start_date;
 
       // active紹介数を取得
       const { count } = await supabase
@@ -87,6 +92,7 @@ function CheckoutContent() {
         discountedMonthlyPrice,
         firstPayment,
         activeReferrals,
+        isReturning,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load checkout info');
@@ -206,6 +212,15 @@ function CheckoutContent() {
     return getEnrollmentFeeWithDiscount() + checkoutInfo.discountedMonthlyPrice;
   };
 
+  // 今日の支払い額（再入会は即請求）
+  const getDueToday = () => {
+    if (!checkoutInfo) return 0;
+    if (checkoutInfo.isReturning) {
+      return getFirstPaymentWithDiscount();
+    }
+    return 0;
+  };
+
   const handleCheckout = async () => {
     if (!checkoutInfo) return;
     
@@ -274,9 +289,10 @@ function CheckoutContent() {
     );
   }
 
-  const { student, enrollmentFee, monthlyPrice, discountPercent, discountedMonthlyPrice, activeReferrals } = checkoutInfo;
+  const { student, enrollmentFee, monthlyPrice, discountPercent, discountedMonthlyPrice, activeReferrals, isReturning } = checkoutInfo;
   const finalEnrollmentFee = getEnrollmentFeeWithDiscount();
   const firstPayment = getFirstPaymentWithDiscount();
+  const dueToday = getDueToday();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-12 px-4">
@@ -296,7 +312,9 @@ function CheckoutContent() {
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
           {/* ヘッダー */}
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6">
-            <h1 className="text-2xl font-bold text-white mb-1">Complete Enrollment</h1>
+            <h1 className="text-2xl font-bold text-white mb-1">
+              {isReturning ? 'Welcome Back!' : 'Complete Enrollment'}
+            </h1>
             <p className="text-blue-200">Subscribe to Mercee Academy</p>
           </div>
 
@@ -312,17 +330,32 @@ function CheckoutContent() {
               </div>
             </div>
 
-            {/* トライアル情報 */}
-            <div className="mb-8 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-2xl">🎉</span>
-                <h3 className="text-lg font-semibold text-emerald-800">14-Day Free Trial</h3>
+            {/* トライアル情報（新規のみ） */}
+            {!isReturning && (
+              <div className="mb-8 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl">🎉</span>
+                  <h3 className="text-lg font-semibold text-emerald-800">14-Day Free Trial</h3>
+                </div>
+                <p className="text-emerald-700 text-sm">
+                  Try unlimited classes free for 14 days. You won&apos;t be charged until the trial ends.
+                  Cancel anytime during the trial with no obligation.
+                </p>
               </div>
-              <p className="text-emerald-700 text-sm">
-                Try unlimited classes free for 14 days. You won&apos;t be charged until the trial ends.
-                Cancel anytime during the trial with no obligation.
-              </p>
-            </div>
+            )}
+
+            {/* 再入会メッセージ */}
+            {isReturning && (
+              <div className="mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl">👋</span>
+                  <h3 className="text-lg font-semibold text-blue-800">Welcome Back!</h3>
+                </div>
+                <p className="text-blue-700 text-sm">
+                  We&apos;re glad to have you back! Your subscription will start immediately upon checkout.
+                </p>
+              </div>
+            )}
 
             {/* 紹介コード入力 */}
             <div className="mb-8">
@@ -450,9 +483,11 @@ function CheckoutContent() {
 
                 {/* 区切り線 */}
                 <div className="pt-3 border-t border-slate-200">
-                  {/* トライアル後の初回請求 */}
+                  {/* 初回請求 */}
                   <div className="flex justify-between items-baseline mb-2">
-                    <span className="text-slate-600">First payment (after 14-day trial)</span>
+                    <span className="text-slate-600">
+                      {isReturning ? 'First payment' : 'First payment (after 14-day trial)'}
+                    </span>
                     <div className="text-right">
                       <span className="text-lg font-bold text-slate-800">
                         ${firstPayment.toFixed(2)}
@@ -484,34 +519,41 @@ function CheckoutContent() {
             </div>
 
             {/* 今日の請求 */}
-            <div className="mb-8 bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className={`mb-8 rounded-xl p-4 ${isReturning ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50 border border-blue-200'}`}>
               <div className="flex justify-between items-center">
-                <span className="font-medium text-blue-800">Due today</span>
-                <span className="text-2xl font-bold text-blue-800">$0.00</span>
+                <span className={`font-medium ${isReturning ? 'text-amber-800' : 'text-blue-800'}`}>Due today</span>
+                <span className={`text-2xl font-bold ${isReturning ? 'text-amber-800' : 'text-blue-800'}`}>
+                  ${dueToday.toFixed(2)}
+                </span>
               </div>
-              <p className="text-blue-600 text-sm mt-1">
-                Your card will be saved for future payments
+              <p className={`text-sm mt-1 ${isReturning ? 'text-amber-600' : 'text-blue-600'}`}>
+                {isReturning 
+                  ? 'Your subscription starts immediately'
+                  : 'Your card will be saved for future payments'
+                }
               </p>
             </div>
 
-            {/* Stripe画面についての説明 */}
-            <div className="mb-8 bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <div className="flex items-start gap-3">
-                <span className="text-xl">💡</span>
-                <div>
-                  <p className="font-medium text-amber-800 mb-1">About the payment screen</p>
-                  <p className="text-amber-700 text-sm">
-                    The Stripe checkout will show &quot;$200/month&quot; for the subscription. 
-                    {finalEnrollmentFee > 0 ? (
-                      <>The ${finalEnrollmentFee.toFixed(2)} enrollment fee will be automatically added to your first payment 
-                      after the trial ends, making your first charge <strong>${firstPayment.toFixed(2)}</strong>.</>
-                    ) : (
-                      <>Your enrollment fee has been waived! Your first charge after the trial will be <strong>${firstPayment.toFixed(2)}</strong>.</>
-                    )}
-                  </p>
+            {/* Stripe画面についての説明（新規のみ） */}
+            {!isReturning && (
+              <div className="mb-8 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-xl">💡</span>
+                  <div>
+                    <p className="font-medium text-amber-800 mb-1">About the payment screen</p>
+                    <p className="text-amber-700 text-sm">
+                      The Stripe checkout will show &quot;$200/month&quot; for the subscription. 
+                      {finalEnrollmentFee > 0 ? (
+                        <>The ${finalEnrollmentFee.toFixed(2)} enrollment fee will be automatically added to your first payment 
+                        after the trial ends, making your first charge <strong>${firstPayment.toFixed(2)}</strong>.</>
+                      ) : (
+                        <>Your enrollment fee has been waived! Your first charge after the trial will be <strong>${firstPayment.toFixed(2)}</strong>.</>
+                      )}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* CTAボタン */}
             <button
@@ -531,6 +573,8 @@ function CheckoutContent() {
                   </svg>
                   Processing...
                 </span>
+              ) : isReturning ? (
+                'Subscribe Now'
               ) : (
                 'Start 14-Day Free Trial'
               )}
