@@ -14,6 +14,50 @@ const MONTHLY_PRICE = 200; // $200/月
 const ENROLLMENT_FEE = 50; // $50 入会費
 const TRIAL_DAYS = 14;
 
+// コードの種類と割引率を取得
+async function getCodeDiscount(code: string): Promise<{ type: 'special' | 'referral' | null; enrollmentFeeDiscount: number; referrerStudentId: string | null }> {
+  if (!code) {
+    return { type: null, enrollmentFeeDiscount: 0, referrerStudentId: null };
+  }
+
+  // まず special_codes をチェック
+  const { data: specialCode } = await supabase
+    .from('special_codes')
+    .select('*')
+    .eq('code', code.toUpperCase())
+    .eq('is_active', true)
+    .single();
+
+  if (specialCode) {
+    // 有効期限チェック
+    if (specialCode.expires_at && new Date(specialCode.expires_at) < new Date()) {
+      return { type: null, enrollmentFeeDiscount: 0, referrerStudentId: null };
+    }
+    return { 
+      type: 'special', 
+      enrollmentFeeDiscount: specialCode.discount_percent, 
+      referrerStudentId: null 
+    };
+  }
+
+  // 次に referral_codes をチェック
+  const { data: referralCode } = await supabase
+    .from('referral_codes')
+    .select('student_id')
+    .eq('code', code.toUpperCase())
+    .single();
+
+  if (referralCode) {
+    return { 
+      type: 'referral', 
+      enrollmentFeeDiscount: 20,  // 友人紹介は20% OFF
+      referrerStudentId: referralCode.student_id 
+    };
+  }
+
+  return { type: null, enrollmentFeeDiscount: 0, referrerStudentId: null };
+}
+
 // 割引率に応じたクーポンを取得または作成
 async function getOrCreateCoupon(discountPercent: number): Promise<string | null> {
   if (discountPercent <= 0) return null;
@@ -71,7 +115,7 @@ async function getOrCreateMonthlyPrice(): Promise<string> {
   return price.id;
 }
 
-// 生徒の紹介割引率を取得
+// 生徒の紹介割引率を取得（月額用）
 async function getStudentDiscount(studentId: string): Promise<number> {
   try {
     const { count } = await supabase
@@ -90,7 +134,16 @@ async function getStudentDiscount(studentId: string): Promise<number> {
 
 export async function POST(request: NextRequest) {
   try {
-    const { customerEmail, studentId, userId, discountPercent: providedDiscount } = await request.json();
+    const { customerEmail, studentId, userId, discountPercent: providedDiscount, referralCode } = await request.json();
+
+    // コードの割引を取得
+    const codeInfo = await getCodeDiscount(referralCode || '');
+    console.log('Code info:', codeInfo);
+
+    // 入会費の計算
+    const enrollmentFeeDiscount = codeInfo.enrollmentFeeDiscount;
+    const finalEnrollmentFee = Math.round(ENROLLMENT_FEE * (1 - enrollmentFeeDiscount / 100));
+    console.log('Enrollment fee:', ENROLLMENT_FEE, '→', finalEnrollmentFee, `(${enrollmentFeeDiscount}% OFF)`);
 
     let discountPercent = providedDiscount ?? 0;
     if (studentId && discountPercent === 0) {
@@ -136,7 +189,10 @@ export async function POST(request: NextRequest) {
           student_id: studentId || '',
           user_id: userId || '',
           discount_percent: discountPercent.toString(),
-          enrollment_fee: ENROLLMENT_FEE.toString(),
+          enrollment_fee: finalEnrollmentFee.toString(),
+          enrollment_fee_discount: enrollmentFeeDiscount.toString(),
+          referrer_student_id: codeInfo.referrerStudentId || '',
+          code_type: codeInfo.type || '',
         },
       },
       success_url: `${request.headers.get('origin')}/dashboard?success=true`,
@@ -144,7 +200,10 @@ export async function POST(request: NextRequest) {
       metadata: {
         student_id: studentId || '',
         user_id: userId || '',
-        enrollment_fee: ENROLLMENT_FEE.toString(),
+        enrollment_fee: finalEnrollmentFee.toString(),
+        enrollment_fee_discount: enrollmentFeeDiscount.toString(),
+        referrer_student_id: codeInfo.referrerStudentId || '',
+        code_type: codeInfo.type || '',
       },
     };
 
@@ -167,6 +226,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       url: session.url,
       discountPercent,
+      enrollmentFeeDiscount,
+      finalEnrollmentFee,
     });
   } catch (error: any) {
     console.error('Checkout session error:', error);

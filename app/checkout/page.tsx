@@ -20,6 +20,13 @@ interface CheckoutInfo {
   activeReferrals: number;
 }
 
+interface CodeValidation {
+  valid: boolean;
+  type: 'special' | 'referral' | null;
+  discountPercent: number;
+  message: string;
+}
+
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -29,6 +36,11 @@ function CheckoutContent() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // 紹介コード関連
+  const [referralCode, setReferralCode] = useState('');
+  const [codeValidation, setCodeValidation] = useState<CodeValidation | null>(null);
+  const [validatingCode, setValidatingCode] = useState(false);
 
   useEffect(() => {
     if (!studentId) {
@@ -83,6 +95,117 @@ function CheckoutContent() {
     }
   };
 
+  // コード検証
+  const validateCode = async (code: string) => {
+    if (!code.trim()) {
+      setCodeValidation(null);
+      return;
+    }
+
+    setValidatingCode(true);
+    try {
+      const upperCode = code.toUpperCase().trim();
+
+      // まず special_codes をチェック
+      const { data: specialCode } = await supabase
+        .from('special_codes')
+        .select('*')
+        .eq('code', upperCode)
+        .eq('is_active', true)
+        .single();
+
+      if (specialCode) {
+        // 有効期限チェック
+        if (specialCode.expires_at && new Date(specialCode.expires_at) < new Date()) {
+          setCodeValidation({
+            valid: false,
+            type: null,
+            discountPercent: 0,
+            message: 'This code has expired',
+          });
+          return;
+        }
+        setCodeValidation({
+          valid: true,
+          type: 'special',
+          discountPercent: specialCode.discount_percent,
+          message: specialCode.discount_percent === 100 
+            ? '🎉 Enrollment fee waived!' 
+            : `🎉 ${specialCode.discount_percent}% off enrollment fee!`,
+        });
+        return;
+      }
+
+      // 次に referral_codes をチェック
+      const { data: referralCodeData } = await supabase
+        .from('referral_codes')
+        .select('student_id')
+        .eq('code', upperCode)
+        .single();
+
+      if (referralCodeData) {
+        // 自分自身のコードかチェック
+        if (referralCodeData.student_id === studentId) {
+          setCodeValidation({
+            valid: false,
+            type: null,
+            discountPercent: 0,
+            message: "You can't use your own referral code",
+          });
+          return;
+        }
+        setCodeValidation({
+          valid: true,
+          type: 'referral',
+          discountPercent: 20,
+          message: '🎁 20% off enrollment fee!',
+        });
+        return;
+      }
+
+      // コードが見つからない
+      setCodeValidation({
+        valid: false,
+        type: null,
+        discountPercent: 0,
+        message: 'Invalid code',
+      });
+    } catch (err) {
+      console.error('Error validating code:', err);
+      setCodeValidation({
+        valid: false,
+        type: null,
+        discountPercent: 0,
+        message: 'Error validating code',
+      });
+    } finally {
+      setValidatingCode(false);
+    }
+  };
+
+  // コード入力のデバウンス
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      validateCode(referralCode);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [referralCode]);
+
+  // 入会費の計算（コード割引適用後）
+  const getEnrollmentFeeWithDiscount = () => {
+    if (!checkoutInfo) return 50;
+    if (codeValidation?.valid) {
+      return checkoutInfo.enrollmentFee * (1 - codeValidation.discountPercent / 100);
+    }
+    return checkoutInfo.enrollmentFee;
+  };
+
+  // 初回支払い額（コード割引適用後）
+  const getFirstPaymentWithDiscount = () => {
+    if (!checkoutInfo) return 0;
+    return getEnrollmentFeeWithDiscount() + checkoutInfo.discountedMonthlyPrice;
+  };
+
   const handleCheckout = async () => {
     if (!checkoutInfo) return;
     
@@ -99,6 +222,7 @@ function CheckoutContent() {
           customerEmail: user?.email,
           priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID,
           discountPercent: checkoutInfo.discountPercent,
+          referralCode: codeValidation?.valid ? referralCode.toUpperCase().trim() : '',
         }),
       });
 
@@ -150,7 +274,9 @@ function CheckoutContent() {
     );
   }
 
-  const { student, enrollmentFee, monthlyPrice, discountPercent, discountedMonthlyPrice, firstPayment, activeReferrals } = checkoutInfo;
+  const { student, enrollmentFee, monthlyPrice, discountPercent, discountedMonthlyPrice, activeReferrals } = checkoutInfo;
+  const finalEnrollmentFee = getEnrollmentFeeWithDiscount();
+  const firstPayment = getFirstPaymentWithDiscount();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-12 px-4">
@@ -198,6 +324,38 @@ function CheckoutContent() {
               </p>
             </div>
 
+            {/* 紹介コード入力 */}
+            <div className="mb-8">
+              <h3 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
+                Have a referral code?
+              </h3>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                  placeholder="Enter code (e.g., WELCOME2026)"
+                  className={`w-full px-4 py-3 border-2 rounded-xl font-mono text-lg uppercase transition-colors ${
+                    codeValidation?.valid 
+                      ? 'border-emerald-300 bg-emerald-50' 
+                      : codeValidation && !codeValidation.valid && referralCode
+                        ? 'border-red-300 bg-red-50'
+                        : 'border-slate-200 focus:border-blue-400'
+                  }`}
+                />
+                {validatingCode && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
+              {codeValidation && referralCode && (
+                <p className={`mt-2 text-sm ${codeValidation.valid ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {codeValidation.message}
+                </p>
+              )}
+            </div>
+
             {/* プラン詳細 */}
             <div className="mb-8">
               <h3 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-4">
@@ -223,11 +381,11 @@ function CheckoutContent() {
                     Unlimited live classes
                   </li>
                   <li className="flex items-center gap-2">
-  <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-  </svg>
-  Small group learning (max 20 students)
-</li>
+                    <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Small group learning (max 20 students)
+                  </li>
                   <li className="flex items-center gap-2">
                     <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -254,7 +412,21 @@ function CheckoutContent() {
                 {/* 入会費 */}
                 <div className="flex justify-between text-slate-600">
                   <span>Enrollment fee (one-time)</span>
-                  <span>${enrollmentFee.toFixed(2)}</span>
+                  <div className="text-right">
+                    {codeValidation?.valid && codeValidation.discountPercent > 0 && (
+                      <span className="text-slate-400 line-through text-sm mr-2">
+                        ${enrollmentFee.toFixed(2)}
+                      </span>
+                    )}
+                    <span className={codeValidation?.valid && finalEnrollmentFee === 0 ? 'text-emerald-600 font-semibold' : ''}>
+                      {finalEnrollmentFee === 0 ? 'FREE' : `$${finalEnrollmentFee.toFixed(2)}`}
+                    </span>
+                    {codeValidation?.valid && codeValidation.discountPercent > 0 && (
+                      <span className="ml-2 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-medium rounded">
+                        {codeValidation.discountPercent}% OFF
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* 月額 */}
@@ -263,7 +435,7 @@ function CheckoutContent() {
                   <span>${monthlyPrice.toFixed(2)}</span>
                 </div>
 
-                {/* 紹介割引 */}
+                {/* 紹介割引（月額用） */}
                 {discountPercent > 0 && (
                   <div className="flex justify-between text-emerald-600">
                     <span className="flex items-center gap-2">
@@ -311,31 +483,35 @@ function CheckoutContent() {
               </div>
             </div>
 
-{/* 今日の請求 */}
-<div className="mb-8 bg-blue-50 border border-blue-200 rounded-xl p-4">
-  <div className="flex justify-between items-center">
-    <span className="font-medium text-blue-800">Due today</span>
-    <span className="text-2xl font-bold text-blue-800">$0.00</span>
-  </div>
-  <p className="text-blue-600 text-sm mt-1">
-    Your card will be saved for future payments
-  </p>
-</div>
+            {/* 今日の請求 */}
+            <div className="mb-8 bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex justify-between items-center">
+                <span className="font-medium text-blue-800">Due today</span>
+                <span className="text-2xl font-bold text-blue-800">$0.00</span>
+              </div>
+              <p className="text-blue-600 text-sm mt-1">
+                Your card will be saved for future payments
+              </p>
+            </div>
 
-{/* Stripe画面についての説明 */}
-<div className="mb-8 bg-amber-50 border border-amber-200 rounded-xl p-4">
-  <div className="flex items-start gap-3">
-    <span className="text-xl">💡</span>
-    <div>
-      <p className="font-medium text-amber-800 mb-1">About the payment screen</p>
-      <p className="text-amber-700 text-sm">
-        The Stripe checkout will show &quot;$200/month&quot; for the subscription. 
-        The ${enrollmentFee} enrollment fee will be automatically added to your first payment 
-        after the trial ends, making your first charge <strong>${firstPayment.toFixed(2)}</strong>.
-      </p>
-    </div>
-  </div>
-</div>
+            {/* Stripe画面についての説明 */}
+            <div className="mb-8 bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">💡</span>
+                <div>
+                  <p className="font-medium text-amber-800 mb-1">About the payment screen</p>
+                  <p className="text-amber-700 text-sm">
+                    The Stripe checkout will show &quot;$200/month&quot; for the subscription. 
+                    {finalEnrollmentFee > 0 ? (
+                      <>The ${finalEnrollmentFee.toFixed(2)} enrollment fee will be automatically added to your first payment 
+                      after the trial ends, making your first charge <strong>${firstPayment.toFixed(2)}</strong>.</>
+                    ) : (
+                      <>Your enrollment fee has been waived! Your first charge after the trial will be <strong>${firstPayment.toFixed(2)}</strong>.</>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
 
             {/* CTAボタン */}
             <button

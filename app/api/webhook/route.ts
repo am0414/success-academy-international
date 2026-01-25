@@ -96,8 +96,14 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
   const subscriptionId = session.subscription as string;
   const customerId = session.customer as string;
   const studentId = session.client_reference_id;
+  
+  // metadata から入会費を取得（デフォルト $50）
+  const enrollmentFee = parseInt(session.metadata?.enrollment_fee || '50') * 100; // cents
+  const referrerStudentId = session.metadata?.referrer_student_id;
+  const codeType = session.metadata?.code_type;
 
   console.log('studentId:', studentId, 'customerId:', customerId);
+  console.log('enrollmentFee:', enrollmentFee / 100, 'referrerStudentId:', referrerStudentId, 'codeType:', codeType);
 
   const { error } = await supabase
     .from('students')
@@ -115,8 +121,48 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
     return;
   }
 
-  // 入会費を追加（二重チェック付き）
-  if (customerId && studentId) {
+  // 紹介コードの場合、referrals テーブルに追加
+  if (codeType === 'referral' && referrerStudentId && studentId) {
+    // 紹介コードを取得
+    const { data: codeData } = await supabase
+      .from('referral_codes')
+      .select('code')
+      .eq('student_id', referrerStudentId)
+      .single();
+
+    if (codeData) {
+      // 既存の referral をチェック
+      const { data: existingReferral } = await supabase
+        .from('referrals')
+        .select('id')
+        .eq('referred_student_id', studentId)
+        .single();
+
+      if (!existingReferral) {
+        // 生徒の名前を取得
+        const { data: studentData } = await supabase
+          .from('students')
+          .select('name')
+          .eq('id', studentId)
+          .single();
+
+        await supabase
+          .from('referrals')
+          .insert({
+            referrer_student_id: referrerStudentId,
+            referred_student_id: studentId,
+            referred_name: studentData?.name || 'Unknown',
+            referral_code: codeData.code,
+            status: 'trial',
+            signed_up_at: new Date().toISOString(),
+          });
+        console.log('Referral created for student:', studentId);
+      }
+    }
+  }
+
+  // 入会費を追加（$0 より大きい場合のみ）
+  if (customerId && studentId && enrollmentFee > 0) {
     const { data: updateResult, error: updateError } = await supabase
       .from('students')
       .update({ 
@@ -140,17 +186,22 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
         });
 
         const hasEnrollmentFee = existingItems.data.some(
-          item => item.description === 'Enrollment Fee (One-time)'
+          item => item.description?.includes('Enrollment Fee')
         );
 
         if (!hasEnrollmentFee) {
+          const discountPercent = 100 - (enrollmentFee / 50); // 元の$50からの割引率
+          const description = discountPercent > 0 
+            ? `Enrollment Fee (${discountPercent}% OFF)`
+            : 'Enrollment Fee (One-time)';
+          
           await stripe.invoiceItems.create({
             customer: customerId,
-            amount: 5000,
+            amount: enrollmentFee,
             currency: 'usd',
-            description: 'Enrollment Fee (One-time)',
+            description: description,
           });
-          console.log('Enrollment fee added for customer:', customerId);
+          console.log('Enrollment fee added:', enrollmentFee / 100, 'USD');
         } else {
           console.log('Enrollment fee already exists in pending items');
         }
@@ -164,6 +215,16 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
     } else {
       console.log('Enrollment fee already charged (DB flag was true)');
     }
+  } else if (enrollmentFee === 0) {
+    console.log('Enrollment fee is $0, skipping');
+    // enrollment_fee_charged を true にする（無料でも「処理済み」にする）
+    await supabase
+      .from('students')
+      .update({ 
+        enrollment_fee_charged: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', studentId);
   }
 }
 
@@ -235,6 +296,7 @@ async function handleSubscriptionDeleted(supabase: any, stripe: Stripe, subscrip
     .from('students')
     .update({
       subscription_status: 'cancelled',
+      enrollment_fee_charged: false,  // ★ 再登録時に入会費を請求するためリセット
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscription.id);
