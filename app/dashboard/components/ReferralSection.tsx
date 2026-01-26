@@ -127,6 +127,37 @@ export default function ReferralSection({
         </div>
       </div>
 
+      {/* Program Rules */}
+      <div className="bg-white/10 rounded-2xl p-6 mb-6">
+        <h3 className="text-lg font-semibold mb-4">📋 Program Rules</h3>
+        <ul className="space-y-2 text-sm text-indigo-100">
+          <li className="flex items-start gap-2">
+            <span className="text-yellow-400">•</span>
+            <span>Get <strong className="text-yellow-400">20% OFF</strong> your monthly fee for each friend you refer</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-yellow-400">•</span>
+            <span>Refer 5 friends = <strong className="text-yellow-400">100% OFF (FREE!)</strong></span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-yellow-400">•</span>
+            <span>Discounts are calculated based on your referrals&apos; <strong>Active</strong> status at each billing cycle</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-yellow-400">•</span>
+            <span>Referrals in <strong>Trial</strong> period don&apos;t count — discount applies when they become Active</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-yellow-400">•</span>
+            <span>If a referred friend cancels, your discount will decrease</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-yellow-400">•</span>
+            <span>If you cancel your subscription, your referral count resets to zero</span>
+          </li>
+        </ul>
+      </div>
+
       {/* Progress by Student */}
       <div className="bg-white/10 rounded-2xl p-6 mb-6">
         <h3 className="text-lg font-semibold mb-4">📊 Progress by Student</h3>
