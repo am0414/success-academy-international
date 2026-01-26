@@ -239,10 +239,12 @@ async function handleCheckoutCompleted(supabase: any, stripe: Stripe, session: S
 
 async function handleSubscriptionCreated(supabase: any, subscription: Stripe.Subscription) {
   console.log('Subscription created:', subscription.id);
+  // ★ trialing → trial に変換
+  const dbStatus = subscription.status === 'trialing' ? 'trial' : subscription.status;
   await supabase
     .from('students')
     .update({
-      subscription_status: subscription.status,
+      subscription_status: dbStatus,
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscription.id);
@@ -253,11 +255,14 @@ async function handleSubscriptionUpdated(supabase: any, stripe: Stripe, subscrip
   console.log('cancel_at_period_end:', subscription.cancel_at_period_end);
   console.log('cancel_at:', subscription.cancel_at);
 
+  // ★ trialing → trial に変換
+  const dbStatus = subscription.status === 'trialing' ? 'trial' : subscription.status;
+
   // DB更新
   await supabase
     .from('students')
     .update({
-      subscription_status: subscription.status,
+      subscription_status: dbStatus,
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_subscription_id', subscription.id);
@@ -491,7 +496,7 @@ async function handleInvoiceUpcoming(supabase: any, stripe: Stripe, invoice: Str
             discounts: [{ coupon: couponId }],
           });
         }
-      }　
+      }
       
       await supabase
         .from('students')
