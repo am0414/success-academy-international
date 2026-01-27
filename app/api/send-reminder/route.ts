@@ -9,14 +9,14 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const { hoursBeforeClass } = await request.json();
+    const { searchParams } = new URL(request.url);
+    const hoursBeforeClass = parseInt(searchParams.get('hours') || '24');
     
     const now = new Date();
     const targetTime = new Date(now.getTime() + hoursBeforeClass * 60 * 60 * 1000);
     
-    // 対象のレッスンを取得（指定時間後に開始するレッスン）
     const targetDate = targetTime.toISOString().split('T')[0];
     const targetHour = targetTime.getUTCHours().toString().padStart(2, '0');
     const targetMinute = targetTime.getUTCMinutes().toString().padStart(2, '0');
@@ -45,7 +45,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'No lessons found for this time' });
     }
 
-    // 各レッスンの予約を取得してメール送信
     let emailsSent = 0;
     
     for (const lesson of lessons) {
@@ -101,39 +100,4 @@ export async function POST(request: NextRequest) {
               <p><strong>⏰ Time:</strong> ${lesson.start_time}</p>
             </div>
             
-            <div style="background: #eef2ff; padding: 20px; border-radius: 10px; margin: 20px 0;">
-              <p><strong>🔗 Zoom Link:</strong> <a href="${zoomLink}">${zoomLink}</a></p>
-              <p><strong>Meeting ID:</strong> ${zoomId}</p>
-              <p><strong>Password:</strong> ${zoomPassword}</p>
-            </div>
-            
-            <p>See you there! 👋</p>
-            <p style="color: #6b7280; font-size: 14px;">— Mercee Academy Team</p>
-          </div>
-        `;
-
-        try {
-          await resend.emails.send({
-            from: 'Mercee Academy <noreply@yourdomain.com>',
-            to: profile.email,
-            subject: emailSubject,
-            html: emailBody,
-          });
-          emailsSent++;
-        } catch (emailError) {
-          console.error('Failed to send email:', emailError);
-        }
-      }
-    }
-
-    return NextResponse.json({ 
-      success: true, 
-      emailsSent,
-      message: `Sent ${emailsSent} reminder emails` 
-    });
-
-  } catch (error: any) {
-    console.error('Reminder error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+            <div style="backgro
