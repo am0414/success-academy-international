@@ -149,7 +149,15 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-600">Welcome, {userName}</span>
-            <button className="text-sm text-slate-500 hover:text-slate-700">Sign Out</button>
+            <button 
+  onClick={async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/auth/login';
+  }}
+  className="text-sm text-slate-500 hover:text-slate-700"
+>
+  Sign Out
+</button>
           </div>
         </div>
       </header>
