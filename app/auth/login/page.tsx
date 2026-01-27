@@ -44,9 +44,17 @@ function LoginForm() {
           }
         });
 
-        if (error) throw error;
+if (error) throw error;
 
-        if (data.user) {
+// 既存ユーザーチェック（メール確認が必要な場合、identitiesが空）
+if (data.user && data.user.identities && data.user.identities.length === 0) {
+  setMessage('This email is already registered. Please sign in instead.');
+  setLoading(false);
+  return;
+}
+
+if (data.user) {
+  
           // プロフィールのfull_nameを更新
           await supabase
             .from('profiles')
