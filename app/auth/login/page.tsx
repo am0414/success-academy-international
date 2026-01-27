@@ -156,23 +156,6 @@ function LoginForm() {
             />
           </div>
 
-          {/* Manual Referral Code Input for Sign Up */}
-          {isSignUp && !searchParams.get('ref') && (
-            <div>
-              <label className="block text-gray-700 mb-2">
-                Referral Code <span className="text-gray-400">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={referralCode}
-                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800 uppercase"
-                placeholder="Enter code"
-                maxLength={10}
-              />
-            </div>
-          )}
-
           <button
             type="submit"
             disabled={loading}
