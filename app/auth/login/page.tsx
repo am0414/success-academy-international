@@ -9,6 +9,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -37,7 +38,8 @@ function LoginForm() {
           password,
           options: {
             data: {
-              referral_code: referralCode || null, // メタデータに紹介コードを保存
+              full_name: fullName,
+              referral_code: referralCode || null,
             }
           }
         });
@@ -45,6 +47,12 @@ function LoginForm() {
         if (error) throw error;
 
         if (data.user) {
+          // プロフィールのfull_nameを更新
+          await supabase
+            .from('profiles')
+            .update({ full_name: fullName })
+            .eq('id', data.user.id);
+
           // 紹介コードがある場合、紹介記録を作成
           if (referralCode) {
             try {
@@ -68,7 +76,7 @@ function LoginForm() {
             }
           }
 
-          setMessage('✉️ ✉️ Check your email for confirmation link!');
+          setMessage('✉️ Check your email for confirmation link!');
         }
       } else {
         // ログイン処理
@@ -108,6 +116,21 @@ function LoginForm() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Full Name - Sign Up only */}
+          {isSignUp && (
+            <div>
+              <label className="block text-gray-700 mb-2">Your Name</label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
+                placeholder="John Smith"
+                required
+              />
+            </div>
+          )}
+
           <div>
             <label className="block text-gray-700 mb-2">Email</label>
             <input
