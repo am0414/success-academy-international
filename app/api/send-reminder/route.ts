@@ -90,14 +90,46 @@ export async function GET(request: NextRequest) {
 
         const emailBody = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #6366f1;">Class Reminder 📚</h2>
+            <h2 style="color: #6366f1;">Class Reminder</h2>
             <p>Hi ${parentName},</p>
             <p>This is a reminder that <strong>${studentName}</strong> has a class coming up!</p>
-            
             <div style="background: #f3f4f6; padding: 20px; border-radius: 10px; margin: 20px 0;">
-              <p><strong>📖 Subject:</strong> ${subject} (${levelName})</p>
-              <p><strong>📅 Date:</strong> ${lesson.date}</p>
-              <p><strong>⏰ Time:</strong> ${lesson.start_time}</p>
+              <p><strong>Subject:</strong> ${subject} (${levelName})</p>
+              <p><strong>Date:</strong> ${lesson.date}</p>
+              <p><strong>Time:</strong> ${lesson.start_time}</p>
             </div>
-            
-            <div style="backgro
+            <div style="background: #eef2ff; padding: 20px; border-radius: 10px; margin: 20px 0;">
+              <p><strong>Zoom Link:</strong> <a href="${zoomLink}">${zoomLink}</a></p>
+              <p><strong>Meeting ID:</strong> ${zoomId}</p>
+              <p><strong>Password:</strong> ${zoomPassword}</p>
+            </div>
+            <p>See you there!</p>
+            <p style="color: #6b7280; font-size: 14px;">— Mercee Academy Team</p>
+          </div>
+        `;
+
+        try {
+          await resend.emails.send({
+            from: 'Mercee Academy <onboarding@resend.dev>',
+            to: profile.email,
+            subject: emailSubject,
+            html: emailBody,
+          });
+          emailsSent++;
+        } catch (emailError) {
+          console.error('Failed to send email:', emailError);
+        }
+      }
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      emailsSent,
+      message: `Sent ${emailsSent} reminder emails` 
+    });
+
+  } catch (error: any) {
+    console.error('Reminder error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
