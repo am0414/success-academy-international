@@ -56,6 +56,7 @@ export default function TeacherLayout({
     { href: `/teacher/${teacherId}/salary`, icon: '💰', label: 'Payments' },
     { href: `/teacher/${teacherId}/announcements`, icon: '📢', label: 'Announcements' },
     { href: `/teacher/${teacherId}/materials`, icon: '📚', label: 'Materials' },
+    { href: `/teacher/${teacherId}/settings`, icon: '⚙️', label: 'Settings' },
   ];
 
   const isActive = (href: string) => pathname === href;
