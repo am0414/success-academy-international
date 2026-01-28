@@ -148,7 +148,7 @@ export default function DashboardPage() {
             <span className="font-semibold text-slate-800">Mercee Academy</span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-600">Welcome, {userName}</span>
+            <Link href="/profile" className="text-sm text-slate-600 hover:text-blue-600 transition-colors cursor-pointer">Welcome, {userName}</Link>
             <button 
   onClick={async () => {
     await supabase.auth.signOut();
