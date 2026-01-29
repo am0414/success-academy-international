@@ -32,9 +32,13 @@ export default function AdminShifts() {
   const [endDate, setEndDate] = useState('');
   const [saving, setSaving] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  // 一括割り当て用
+  const [selectedLessons, setSelectedLessons] = useState<string[]>([]);
+  const [bulkTeacherId, setBulkTeacherId] = useState('');
+  const [bulkAssigning, setBulkAssigning] = useState(false);
 
   useEffect(() => {
-    // デフォルトで今日から1週間を表示
     const today = new Date();
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 7);
@@ -52,14 +56,12 @@ export default function AdminShifts() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 先生一覧取得
       const { data: teachersData } = await supabase
         .from('teachers')
         .select('id, name')
         .order('name');
       setTeachers(teachersData || []);
 
-      // レッスン取得
       const { data: lessonsData, error } = await supabase
         .from('lessons')
         .select(`
@@ -84,6 +86,7 @@ export default function AdminShifts() {
 
       if (error) throw error;
       setLessons(lessonsData || []);
+      setSelectedLessons([]);
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -101,7 +104,6 @@ export default function AdminShifts() {
 
       if (error) throw error;
 
-      // ローカル状態を更新
       setLessons(prev => prev.map(l => {
         if (l.id === lessonId) {
           const teacher = teachers.find(t => t.id === teacherId);
@@ -122,6 +124,71 @@ export default function AdminShifts() {
     } finally {
       setSaving(null);
     }
+  };
+
+  // 一括割り当て
+  const bulkAssign = async () => {
+    if (selectedLessons.length === 0) {
+      setMessage({ type: 'error', text: 'Please select lessons first' });
+      return;
+    }
+    if (!bulkTeacherId) {
+      setMessage({ type: 'error', text: 'Please select a teacher' });
+      return;
+    }
+
+    setBulkAssigning(true);
+    try {
+      const { error } = await supabase
+        .from('lessons')
+        .update({ teacher_id: bulkTeacherId })
+        .in('id', selectedLessons);
+
+      if (error) throw error;
+
+      const teacher = teachers.find(t => t.id === bulkTeacherId);
+      setLessons(prev => prev.map(l => {
+        if (selectedLessons.includes(l.id)) {
+          return {
+            ...l,
+            teacher_id: bulkTeacherId,
+            teachers: teacher ? { id: teacher.id, name: teacher.name } : null
+          };
+        }
+        return l;
+      }));
+
+      setMessage({ type: 'success', text: `Assigned ${selectedLessons.length} lessons to ${teacher?.name}!` });
+      setSelectedLessons([]);
+      setBulkTeacherId('');
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      console.error('Error:', error);
+      setMessage({ type: 'error', text: 'Failed to bulk assign' });
+    } finally {
+      setBulkAssigning(false);
+    }
+  };
+
+  const toggleLesson = (lessonId: string) => {
+    setSelectedLessons(prev =>
+      prev.includes(lessonId)
+        ? prev.filter(id => id !== lessonId)
+        : [...prev, lessonId]
+    );
+  };
+
+  const selectAllUnassigned = () => {
+    const unassigned = lessons.filter(l => !l.teacher_id).map(l => l.id);
+    setSelectedLessons(unassigned);
+  };
+
+  const selectAll = () => {
+    setSelectedLessons(lessons.map(l => l.id));
+  };
+
+  const deselectAll = () => {
+    setSelectedLessons([]);
   };
 
   const formatTime = (time: string) => {
@@ -176,7 +243,7 @@ export default function AdminShifts() {
 
       {/* Date Range Filter */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mb-6">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">From</label>
             <input
@@ -198,6 +265,48 @@ export default function AdminShifts() {
           <div className="ml-auto text-sm text-slate-500">
             {lessons.length} lessons found
           </div>
+        </div>
+      </div>
+
+      {/* Bulk Assign Panel */}
+      <div className="bg-indigo-50 rounded-2xl p-6 border border-indigo-200 mb-6">
+        <h2 className="text-lg font-semibold text-indigo-800 mb-4">🚀 Bulk Assign</h2>
+        <div className="flex items-end gap-4 flex-wrap">
+          <div className="flex gap-2">
+            <button onClick={selectAll} className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50">
+              Select All
+            </button>
+            <button onClick={selectAllUnassigned} className="px-3 py-2 text-sm bg-white border border-orange-200 rounded-lg hover:bg-orange-50 text-orange-700">
+              Select Unassigned
+            </button>
+            <button onClick={deselectAll} className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50">
+              Deselect All
+            </button>
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-indigo-700 mb-1">
+              Assign {selectedLessons.length} selected lessons to:
+            </label>
+            <select
+              value={bulkTeacherId}
+              onChange={(e) => setBulkTeacherId(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-indigo-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            >
+              <option value="">-- Select Teacher --</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={bulkAssign}
+            disabled={bulkAssigning || selectedLessons.length === 0 || !bulkTeacherId}
+            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          >
+            {bulkAssigning ? '⏳ Assigning...' : `✅ Assign ${selectedLessons.length} Lessons`}
+          </button>
         </div>
       </div>
 
@@ -225,12 +334,24 @@ export default function AdminShifts() {
       <div className="space-y-6">
         {Object.entries(groupedLessons).map(([date, dateLessons]) => (
           <div key={date} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-slate-50 px-6 py-3 border-b border-slate-200">
+            <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex items-center justify-between">
               <h2 className="font-semibold text-slate-800">{formatDate(date)}</h2>
+              <span className="text-sm text-slate-500">{dateLessons.length} lessons</span>
             </div>
             <div className="divide-y divide-slate-100">
               {dateLessons.map((lesson) => (
-                <div key={lesson.id} className="px-6 py-4 flex items-center gap-4">
+                <div 
+                  key={lesson.id} 
+                  className={`px-6 py-4 flex items-center gap-4 ${
+                    selectedLessons.includes(lesson.id) ? 'bg-indigo-50' : ''
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedLessons.includes(lesson.id)}
+                    onChange={() => toggleLesson(lesson.id)}
+                    className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
                   <div className="w-20 text-center">
                     <p className="font-bold text-indigo-600">{formatTime(lesson.start_time)}</p>
                   </div>
