@@ -30,6 +30,8 @@ export default function ShiftCalendar() {
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all');
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -77,6 +79,34 @@ export default function ShiftCalendar() {
     }
   };
 
+  const assignTeacher = async (lessonId: string, teacherId: string | null) => {
+    setSaving(lessonId);
+    try {
+      const { error } = await supabase
+        .from('lessons')
+        .update({ teacher_id: teacherId || null })
+        .eq('id', lessonId);
+
+      if (error) throw error;
+
+      setLessons(prev => prev.map(l => {
+        if (l.id === lessonId) {
+          const teacher = teachers.find(t => t.id === teacherId);
+          return {
+            ...l,
+            teacher_id: teacherId,
+            teachers: teacher ? { id: teacher.id, name: teacher.name } : null
+          };
+        }
+        return l;
+      }));
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const getDaysInMonth = () => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -104,15 +134,16 @@ export default function ShiftCalendar() {
       filtered = filtered.filter(l => l.teacher_id === selectedTeacher);
     }
     
-    return filtered;
+    return filtered.sort((a, b) => a.start_time.localeCompare(b.start_time));
   };
 
   const formatTime = (time: string) => {
     if (!time) return '';
     const [hours, minutes] = time.split(':');
     const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
     const hour12 = hour % 12 || 12;
-    return `${hour12}:${minutes}`;
+    return `${hour12}:${minutes} ${ampm}`;
   };
 
   const prevMonth = () => {
@@ -146,15 +177,17 @@ export default function ShiftCalendar() {
     );
   }
 
+  const selectedDateLessons = selectedDate ? getLessonsForDate(selectedDate) : [];
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-800">Shift Calendar</h1>
-          <p className="text-slate-500">View teacher schedules at a glance</p>
+          <p className="text-slate-500">Click a date to view and edit lessons</p>
         </div>
         <Link href="/admin/shifts" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-          ← Back to Shifts
+          ← Back to List
         </Link>
       </div>
 
@@ -206,18 +239,46 @@ export default function ShiftCalendar() {
           {days.map((date, index) => {
             const dayLessons = date ? getLessonsForDate(date) : [];
             const isToday = date && date.toDateString() === new Date().toDateString();
+            const isSelected = date && selectedDate && date.toDateString() === selectedDate.toDateString();
+            const unassignedCount = dayLessons.filter(l => !l.teacher_id).length;
+
             return (
-              <div key={index} className={`min-h-[120px] border-b border-r border-slate-100 p-2 ${!date ? 'bg-slate-50' : ''} ${isToday ? 'bg-blue-50' : ''}`}>
+              <div
+                key={index}
+                onClick={() => date && setSelectedDate(date)}
+                className={`min-h-[100px] border-b border-r border-slate-100 p-2 cursor-pointer transition-colors ${
+                  !date ? 'bg-slate-50 cursor-default' : 'hover:bg-slate-50'
+                } ${isToday ? 'bg-blue-50' : ''} ${isSelected ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}`}
+              >
                 {date && (
                   <>
-                    <div className={`text-sm font-medium mb-1 ${isToday ? 'text-blue-600' : 'text-slate-600'}`}>{date.getDate()}</div>
-                    <div className="space-y-1">
-                      {dayLessons.slice(0, 4).map((lesson) => (
-                        <div key={lesson.id} className={`text-xs p-1 rounded border truncate ${getTeacherColor(lesson.teacher_id)}`} title={`${formatTime(lesson.start_time)} - ${lesson.classes?.subject} L${lesson.classes?.level}`}>
-                          {formatTime(lesson.start_time)} {lesson.classes?.subject === 'math' ? '🔢' : '📚'} {lesson.teachers?.name?.charAt(0) || '?'}
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-sm font-medium ${isToday ? 'text-blue-600' : 'text-slate-600'}`}>
+                        {date.getDate()}
+                      </span>
+                      {dayLessons.length > 0 && (
+                        <span className="text-xs bg-slate-200 px-1.5 py-0.5 rounded">
+                          {dayLessons.length}
+                        </span>
+                      )}
+                    </div>
+                    {unassignedCount > 0 && (
+                      <div className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded mb-1 inline-block">
+                        {unassignedCount} unassigned
+                      </div>
+                    )}
+                    <div className="space-y-0.5">
+                      {dayLessons.slice(0, 3).map((lesson) => (
+                        <div
+                          key={lesson.id}
+                          className={`text-xs px-1 py-0.5 rounded truncate ${getTeacherColor(lesson.teacher_id)}`}
+                        >
+                          {lesson.start_time.slice(0, 5)} {lesson.classes?.subject === 'math' ? '🔢' : '📚'}
                         </div>
                       ))}
-                      {dayLessons.length > 4 && <div className="text-xs text-slate-500">+{dayLessons.length - 4} more</div>}
+                      {dayLessons.length > 3 && (
+                        <div className="text-xs text-slate-500">+{dayLessons.length - 3} more</div>
+                      )}
                     </div>
                   </>
                 )}
@@ -227,6 +288,59 @@ export default function ShiftCalendar() {
         </div>
       </div>
 
+      {/* 日付詳細モーダル */}
+      {selectedDate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedDate(null)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">
+                  {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </h2>
+                <p className="text-sm text-slate-500">{selectedDateLessons.length} lessons</p>
+              </div>
+              <button onClick={() => setSelectedDate(null)} className="text-2xl text-slate-400 hover:text-slate-600">×</button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {selectedDateLessons.length === 0 ? (
+                <p className="text-center text-slate-500 py-8">No lessons on this day</p>
+              ) : (
+                <div className="space-y-3">
+                  {selectedDateLessons.map((lesson) => (
+                    <div key={lesson.id} className="bg-slate-50 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg font-bold text-indigo-600">{formatTime(lesson.start_time)}</span>
+                          <span className="text-slate-800 font-medium">
+                            {lesson.classes?.subject === 'math' ? '🔢 Math' : '📚 English'} Level {lesson.classes?.level}
+                          </span>
+                        </div>
+                      </div>
+                      <select
+                        value={lesson.teacher_id || ''}
+                        onChange={(e) => assignTeacher(lesson.id, e.target.value || null)}
+                        disabled={saving === lesson.id}
+                        className={`w-full px-3 py-2 rounded-lg border text-sm ${
+                          lesson.teacher_id
+                            ? 'border-green-300 bg-green-50 text-green-800'
+                            : 'border-orange-300 bg-orange-50 text-orange-800'
+                        }`}
+                      >
+                        <option value="">-- Unassigned --</option>
+                        {teachers.map((teacher) => (
+                          <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
         <div className="bg-white rounded-xl p-4 border border-slate-200">
           <p className="text-sm text-slate-500">Total</p>
