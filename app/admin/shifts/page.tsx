@@ -253,7 +253,7 @@ export default function AdminShifts() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-800">Shift Management</h1>
+        <div className="flex items-center justify-between"><h1 className="text-3xl font-bold text-slate-800">Shift Management</h1><a href="/admin/shifts/calendar" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">📅 Calendar</a></div>
         <p className="text-slate-500">Assign teachers to lessons</p>
       </div>
 
