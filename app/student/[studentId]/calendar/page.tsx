@@ -18,6 +18,10 @@ interface Lesson {
   is_reserved: boolean;
   reservation_id?: string;
   reservation_status?: string;
+  zoom_link?: string;
+  zoom_id?: string;
+  zoom_password?: string;
+  teacher_name?: string;
 }
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -36,11 +40,13 @@ export default function CalendarPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
   
+  // レッスン詳細モーダル
+  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  
   // フィードバック用
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackLesson, setFeedbackLesson] = useState<Lesson | null>(null);
 
-  // 毎分更新（カウントダウン用）
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(interval);
@@ -142,6 +148,12 @@ export default function CalendarPage() {
             id,
             date,
             start_time,
+            zoom_link,
+            zoom_id,
+            zoom_password,
+            teachers (
+              name
+            ),
             classes (
               subject,
               level,
@@ -170,6 +182,10 @@ export default function CalendarPage() {
             reserved_count: 0,
             max_capacity: 30,
             class_id: '',
+            zoom_link: r.lessons.zoom_link,
+            zoom_id: r.lessons.zoom_id,
+            zoom_password: r.lessons.zoom_password,
+            teacher_name: r.lessons.teachers?.name,
           }))
           .filter((l: Lesson) => {
             const lessonDateTime = new Date(`${l.date}T${l.start_time}`);
@@ -196,6 +212,12 @@ export default function CalendarPage() {
           date,
           start_time,
           class_id,
+          zoom_link,
+          zoom_id,
+          zoom_password,
+          teachers (
+            name
+          ),
           classes (
             subject,
             level,
@@ -239,6 +261,10 @@ export default function CalendarPage() {
             is_reserved: !!myReservation,
             reservation_id: myReservation?.id,
             reservation_status: myReservation?.status,
+            zoom_link: lesson.zoom_link,
+            zoom_id: lesson.zoom_id,
+            zoom_password: lesson.zoom_password,
+            teacher_name: lesson.teachers?.name,
           };
         })
       );
@@ -327,6 +353,7 @@ export default function CalendarPage() {
       if (error) throw error;
       await fetchLessons();
       await fetchUpcomingLessons();
+      setSelectedLesson(null);
     } catch (error) {
       console.error('Error:', error);
       alert('Failed to cancel. Please try again.');
@@ -338,6 +365,7 @@ export default function CalendarPage() {
   const handleCompleteLesson = (lesson: Lesson) => {
     setFeedbackLesson(lesson);
     setShowFeedback(true);
+    setSelectedLesson(null);
   };
 
   const handleFeedbackComplete = () => {
@@ -454,95 +482,191 @@ export default function CalendarPage() {
     return lessons.filter(l => l.date === dateStr);
   };
 
-  const renderLessonButton = (lesson: Lesson) => {
-    const canAction = canReserveOrCancel(lesson.date, lesson.start_time);
-    const ended = isLessonEnded(lesson.date, lesson.start_time);
-    const withinFeedback = isWithinFeedbackPeriod(lesson.date);
-    const isFull = lesson.reserved_count >= lesson.max_capacity;
-    const isLoading = actionLoading === lesson.id || actionLoading === lesson.reservation_id;
+  const renderLessonDetailModal = () => {
+    if (!selectedLesson) return null;
 
-    if (lesson.is_reserved && ended && withinFeedback && lesson.reservation_status === 'reserved') {
-      return (
-        <button
-          onClick={() => handleCompleteLesson(lesson)}
-          className="px-4 py-2 rounded-lg font-medium bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:opacity-90 transition-opacity"
-        >
-          Complete Lesson
-        </button>
-      );
-    }
-
-    if (lesson.reservation_status === 'attended') {
-      return (
-        <span className="px-4 py-2 rounded-lg font-medium bg-emerald-100 text-emerald-700">
-          ✓ Completed
-        </span>
-      );
-    }
-
-    if (lesson.is_reserved && !ended) {
-      return (
-        <button
-          onClick={() => canAction && handleCancel(lesson.reservation_id!)}
-          disabled={!canAction || isLoading}
-          className={`px-4 py-2 rounded-lg font-medium transition-all ${
-            canAction
-              ? 'bg-red-100 text-red-600 hover:bg-red-200'
-              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-          }`}
-        >
-          {isLoading ? '...' : 'Cancel'}
-        </button>
-      );
-    }
+    const canAction = canReserveOrCancel(selectedLesson.date, selectedLesson.start_time);
+    const ended = isLessonEnded(selectedLesson.date, selectedLesson.start_time);
+    const withinFeedback = isWithinFeedbackPeriod(selectedLesson.date);
+    const isLoading = actionLoading === selectedLesson.id || actionLoading === selectedLesson.reservation_id;
 
     return (
-      <button
-        onClick={() => canAction && !isFull && handleReserve(lesson.id)}
-        disabled={!canAction || isFull || isLoading}
-        className={`px-4 py-2 rounded-lg font-medium transition-all ${
-          canAction && !isFull
-            ? lesson.subject === 'math'
-              ? 'bg-blue-500 text-white hover:bg-blue-600'
-              : 'bg-emerald-500 text-white hover:bg-emerald-600'
-            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-        }`}
-      >
-        {isLoading ? '...' : isFull ? 'Full' : 'Reserve'}
-      </button>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedLesson(null)}>
+        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+          {/* ヘッダー */}
+          <div className={`p-6 ${selectedLesson.subject === 'math' ? 'bg-blue-500' : 'bg-emerald-500'} text-white`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">{selectedLesson.subject === 'math' ? '🔢' : '📚'}</span>
+                <div>
+                  <h2 className="text-xl font-bold">
+                    {selectedLesson.subject === 'math' ? 'Math' : 'English'} Level {selectedLesson.level}
+                  </h2>
+                  <p className="text-white/80">{selectedLesson.level_name}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedLesson(null)} className="text-2xl text-white/80 hover:text-white">×</button>
+            </div>
+          </div>
+
+          {/* 詳細 */}
+          <div className="p-6 space-y-4">
+            {/* 日時 */}
+            <div className="flex items-center gap-3">
+              <span className="text-xl">📅</span>
+              <div>
+                <p className="font-medium text-slate-800">{selectedLesson.date}</p>
+                <p className="text-slate-500">{convertTime(selectedLesson.start_time)}</p>
+              </div>
+            </div>
+
+            {/* 先生 */}
+            {selectedLesson.teacher_name && (
+              <div className="flex items-center gap-3">
+                <span className="text-xl">👩‍🏫</span>
+                <div>
+                  <p className="text-sm text-slate-500">Teacher</p>
+                  <p className="font-medium text-slate-800">{selectedLesson.teacher_name}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Zoom情報（予約している場合のみ表示） */}
+            {selectedLesson.is_reserved && (selectedLesson.zoom_link || selectedLesson.zoom_id) && (
+              <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🎥</span>
+                  <h3 className="font-bold text-blue-800">Zoom Information</h3>
+                </div>
+                
+                {selectedLesson.zoom_link && (
+                  
+                    href={selectedLesson.zoom_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full py-3 bg-blue-500 text-white text-center rounded-lg font-medium hover:bg-blue-600 transition-colors"
+                  >
+                    🚀 Join Zoom Meeting
+                  </a>
+                )}
+                
+                {selectedLesson.zoom_id && (
+                  <div className="flex items-center justify-between bg-white rounded-lg p-3">
+                    <div>
+                      <p className="text-xs text-slate-500">Meeting ID</p>
+                      <p className="font-mono font-medium text-slate-800">{selectedLesson.zoom_id}</p>
+                    </div>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(selectedLesson.zoom_id!)}
+                      className="text-blue-500 hover:text-blue-700 text-sm"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+                
+                {selectedLesson.zoom_password && (
+                  <div className="flex items-center justify-between bg-white rounded-lg p-3">
+                    <div>
+                      <p className="text-xs text-slate-500">Password</p>
+                      <p className="font-mono font-medium text-slate-800">{selectedLesson.zoom_password}</p>
+                    </div>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(selectedLesson.zoom_password!)}
+                      className="text-blue-500 hover:text-blue-700 text-sm"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 予約していない場合のメッセージ */}
+            {!selectedLesson.is_reserved && (
+              <div className="bg-slate-100 rounded-xl p-4 text-center text-slate-500">
+                <p>Reserve this lesson to see Zoom information</p>
+              </div>
+            )}
+
+            {/* アクションボタン */}
+            <div className="pt-4 border-t border-slate-200">
+              {selectedLesson.is_reserved && ended && withinFeedback && selectedLesson.reservation_status === 'reserved' ? (
+                <button
+                  onClick={() => handleCompleteLesson(selectedLesson)}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-medium hover:opacity-90"
+                >
+                  ✓ Complete Lesson
+                </button>
+              ) : selectedLesson.reservation_status === 'attended' ? (
+                <div className="w-full py-3 bg-emerald-100 text-emerald-700 text-center rounded-xl font-medium">
+                  ✓ Completed
+                </div>
+              ) : selectedLesson.is_reserved && !ended ? (
+                <button
+                  onClick={() => canAction && handleCancel(selectedLesson.reservation_id!)}
+                  disabled={!canAction || isLoading}
+                  className={`w-full py-3 rounded-xl font-medium ${
+                    canAction ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-slate-100 text-slate-400'
+                  }`}
+                >
+                  {isLoading ? '...' : 'Cancel Reservation'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    canAction && handleReserve(selectedLesson.id);
+                    setSelectedLesson(null);
+                  }}
+                  disabled={!canAction || isLoading}
+                  className={`w-full py-3 rounded-xl font-medium ${
+                    canAction
+                      ? selectedLesson.subject === 'math'
+                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                        : 'bg-emerald-500 text-white hover:bg-emerald-600'
+                      : 'bg-slate-100 text-slate-400'
+                  }`}
+                >
+                  {isLoading ? '...' : 'Reserve'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     );
   };
 
   const renderNeedsAction = () => {
-  if (needsActionLessons.length === 0) return null;
+    if (needsActionLessons.length === 0) return null;
 
-  return (
-    <div className="bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl p-4 mb-6">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-xl">⚠️</span>
-        <h2 className="font-bold text-slate-800">Needs Action ({needsActionLessons.length})</h2>
+    return (
+      <div className="bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl p-4 mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xl">⚠️</span>
+          <h2 className="font-bold text-slate-800">Needs Action ({needsActionLessons.length})</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {needsActionLessons.map((lesson) => (
+            <button
+              key={lesson.id}
+              onClick={() => handleCompleteLesson(lesson)}
+              className="bg-white/80 hover:bg-white rounded-xl px-4 py-2 flex items-center gap-3 transition-colors"
+            >
+              <span>{lesson.subject === 'math' ? '🔢' : '📚'}</span>
+              <div className="text-left">
+                <p className="font-medium text-sm text-slate-800">
+                  {lesson.subject === 'math' ? 'Math' : 'English'} L{lesson.level}
+                </p>
+                <p className="text-xs text-slate-600">{getDaysAgo(lesson.date)}</p>
+              </div>
+              <span className="text-xs bg-amber-500 text-white px-2 py-1 rounded-full">Complete</span>
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2">
-        {needsActionLessons.map((lesson) => (
-          <button
-            key={lesson.id}
-            onClick={() => handleCompleteLesson(lesson)}
-            className="bg-white/80 hover:bg-white rounded-xl px-4 py-2 flex items-center gap-3 transition-colors"
-          >
-            <span>{lesson.subject === 'math' ? '🔢' : '📚'}</span>
-            <div className="text-left">
-              <p className="font-medium text-sm text-slate-800">
-                {lesson.subject === 'math' ? 'Math' : 'English'} L{lesson.level}
-              </p>
-              <p className="text-xs text-slate-600">{getDaysAgo(lesson.date)}</p>
-            </div>
-            <span className="text-xs bg-amber-500 text-white px-2 py-1 rounded-full">Complete</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-};
+    );
+  };
 
   const renderUpcomingLessons = () => {
     if (upcomingLessons.length === 0) return null;
@@ -552,7 +676,11 @@ export default function CalendarPage() {
         <h2 className="text-lg font-bold mb-4">📅 My Upcoming Lessons</h2>
         <div className="space-y-3">
           {upcomingLessons.map((lesson) => (
-            <div key={lesson.id} className="bg-white/20 rounded-xl p-4 flex items-center justify-between">
+            <div
+              key={lesson.id}
+              onClick={() => setSelectedLesson(lesson)}
+              className="bg-white/20 rounded-xl p-4 flex items-center justify-between cursor-pointer hover:bg-white/30 transition-colors"
+            >
               <div className="flex items-center gap-4">
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                   lesson.subject === 'math' ? 'bg-blue-400' : 'bg-emerald-400'
@@ -570,12 +698,7 @@ export default function CalendarPage() {
               </div>
               <div className="text-right">
                 <p className="font-bold text-lg">{getCountdown(lesson.date, lesson.start_time)}</p>
-                <button
-                  onClick={() => handleCancel(lesson.reservation_id!)}
-                  className="text-sm text-blue-200 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
+                <p className="text-sm text-blue-200">Tap for Zoom →</p>
               </div>
             </div>
           ))}
@@ -591,7 +714,42 @@ export default function CalendarPage() {
         {dayLessons.length === 0 ? (
           <p className="text-center text-slate-500 py-8">No classes on this day</p>
         ) : (
-          dayLessons.map(lesson => renderLessonCard(lesson))
+          dayLessons.map(lesson => (
+            <div
+              key={lesson.id}
+              onClick={() => setSelectedLesson(lesson)}
+              className={`p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-md ${
+                lesson.subject === 'math' ? 'border-blue-200 bg-blue-50 hover:border-blue-400' : 'border-emerald-200 bg-emerald-50 hover:border-emerald-400'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    lesson.subject === 'math' ? 'bg-blue-500' : 'bg-emerald-500'
+                  } text-white text-xl`}>
+                    {lesson.subject === 'math' ? '🔢' : '📚'}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-800">
+                      {lesson.subject === 'math' ? 'Math' : 'English'} Level {lesson.level}
+                    </h3>
+                    <p className="text-sm text-slate-500">{lesson.level_name}</p>
+                    <p className="text-sm text-slate-600 font-medium">
+                      {convertTime(lesson.start_time)} • {lesson.max_capacity - lesson.reserved_count} spots left
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="text-right">
+                  {lesson.is_reserved ? (
+                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">Reserved ✓</span>
+                  ) : (
+                    <span className="text-slate-400 text-sm">Tap to view →</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
         )}
       </div>
     );
@@ -626,7 +784,8 @@ export default function CalendarPage() {
                   return (
                     <div
                       key={lesson.id}
-                      className={`text-xs p-2 rounded-lg transition-all ${
+                      onClick={(e) => { e.stopPropagation(); setSelectedLesson(lesson); }}
+                      className={`text-xs p-2 rounded-lg transition-all cursor-pointer hover:opacity-80 ${
                         lesson.reservation_status === 'attended'
                           ? 'bg-emerald-500 text-white'
                           : needsCompletion
@@ -734,40 +893,6 @@ export default function CalendarPage() {
     );
   };
 
-  const renderLessonCard = (lesson: Lesson) => {
-    const spotsLeft = lesson.max_capacity - lesson.reserved_count;
-
-    return (
-      <div
-        key={lesson.id}
-        className={`p-4 rounded-xl border-2 ${
-          lesson.subject === 'math' ? 'border-blue-200 bg-blue-50' : 'border-emerald-200 bg-emerald-50'
-        }`}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-              lesson.subject === 'math' ? 'bg-blue-500' : 'bg-emerald-500'
-            } text-white text-xl`}>
-              {lesson.subject === 'math' ? '🔢' : '📚'}
-            </div>
-            <div>
-              <h3 className="font-semibold text-slate-800">
-                {lesson.subject === 'math' ? 'Math' : 'English'} Level {lesson.level}
-              </h3>
-              <p className="text-sm text-slate-500">{lesson.level_name}</p>
-              <p className="text-sm text-slate-600 font-medium">
-                {convertTime(lesson.start_time)} • {spotsLeft} spots left
-              </p>
-            </div>
-          </div>
-          
-          {renderLessonButton(lesson)}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="p-8">
       {/* フィードバックモーダル */}
@@ -785,6 +910,9 @@ export default function CalendarPage() {
           onSkip={handleFeedbackComplete}
         />
       )}
+
+      {/* レッスン詳細モーダル */}
+      {renderLessonDetailModal()}
 
       {/* ヘッダー */}
       <div className="flex items-center justify-between mb-6">
