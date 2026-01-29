@@ -33,7 +33,6 @@ export default function AdminShifts() {
   const [saving, setSaving] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
-  // 一括割り当て用
   const [selectedLessons, setSelectedLessons] = useState<string[]>([]);
   const [bulkTeacherId, setBulkTeacherId] = useState('');
   const [bulkAssigning, setBulkAssigning] = useState(false);
@@ -126,7 +125,6 @@ export default function AdminShifts() {
     }
   };
 
-  // 一括割り当て
   const bulkAssign = async () => {
     if (selectedLessons.length === 0) {
       setMessage({ type: 'error', text: 'Please select lessons first' });
@@ -178,6 +176,26 @@ export default function AdminShifts() {
     );
   };
 
+  // 日付ごとに選択
+  const toggleDateLessons = (date: string) => {
+    const dateLessonIds = lessons.filter(l => l.date === date).map(l => l.id);
+    const allSelected = dateLessonIds.every(id => selectedLessons.includes(id));
+    
+    if (allSelected) {
+      // 全て選択されている場合は解除
+      setSelectedLessons(prev => prev.filter(id => !dateLessonIds.includes(id)));
+    } else {
+      // 選択されていない場合は追加
+      setSelectedLessons(prev => [...new Set([...prev, ...dateLessonIds])]);
+    }
+  };
+
+  // 日付ごとに未割り当てのみ選択
+  const selectDateUnassigned = (date: string) => {
+    const unassignedIds = lessons.filter(l => l.date === date && !l.teacher_id).map(l => l.id);
+    setSelectedLessons(prev => [...new Set([...prev, ...unassignedIds])]);
+  };
+
   const selectAllUnassigned = () => {
     const unassigned = lessons.filter(l => !l.teacher_id).map(l => l.id);
     setSelectedLessons(unassigned);
@@ -214,6 +232,12 @@ export default function AdminShifts() {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr + 'T00:00:00');
     return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  // その日付のレッスンが全て選択されているかチェック
+  const isDateAllSelected = (date: string) => {
+    const dateLessonIds = lessons.filter(l => l.date === date).map(l => l.id);
+    return dateLessonIds.length > 0 && dateLessonIds.every(id => selectedLessons.includes(id));
   };
 
   if (loading) {
@@ -277,7 +301,7 @@ export default function AdminShifts() {
               Select All
             </button>
             <button onClick={selectAllUnassigned} className="px-3 py-2 text-sm bg-white border border-orange-200 rounded-lg hover:bg-orange-50 text-orange-700">
-              Select Unassigned
+              Select All Unassigned
             </button>
             <button onClick={deselectAll} className="px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:bg-slate-50">
               Deselect All
@@ -332,58 +356,81 @@ export default function AdminShifts() {
 
       {/* Lessons by Date */}
       <div className="space-y-6">
-        {Object.entries(groupedLessons).map(([date, dateLessons]) => (
-          <div key={date} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex items-center justify-between">
-              <h2 className="font-semibold text-slate-800">{formatDate(date)}</h2>
-              <span className="text-sm text-slate-500">{dateLessons.length} lessons</span>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {dateLessons.map((lesson) => (
-                <div 
-                  key={lesson.id} 
-                  className={`px-6 py-4 flex items-center gap-4 ${
-                    selectedLessons.includes(lesson.id) ? 'bg-indigo-50' : ''
-                  }`}
-                >
+        {Object.entries(groupedLessons).map(([date, dateLessons]) => {
+          const unassignedCount = dateLessons.filter(l => !l.teacher_id).length;
+          const allSelected = isDateAllSelected(date);
+          
+          return (
+            <div key={date} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-4">
                   <input
                     type="checkbox"
-                    checked={selectedLessons.includes(lesson.id)}
-                    onChange={() => toggleLesson(lesson.id)}
+                    checked={allSelected}
+                    onChange={() => toggleDateLessons(date)}
                     className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
-                  <div className="w-20 text-center">
-                    <p className="font-bold text-indigo-600">{formatTime(lesson.start_time)}</p>
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-slate-800">
-                      {lesson.classes?.subject === 'math' ? '🔢 Math' : '📚 English'} Level {lesson.classes?.level}
-                    </p>
-                  </div>
-                  <div className="w-48">
-                    <select
-                      value={lesson.teacher_id || ''}
-                      onChange={(e) => assignTeacher(lesson.id, e.target.value || null)}
-                      disabled={saving === lesson.id}
-                      className={`w-full px-3 py-2 rounded-lg border text-sm ${
-                        lesson.teacher_id
-                          ? 'border-green-300 bg-green-50 text-green-800'
-                          : 'border-orange-300 bg-orange-50 text-orange-800'
-                      } focus:border-blue-500 focus:ring-2 focus:ring-blue-200 disabled:opacity-50`}
-                    >
-                      <option value="">-- Unassigned --</option>
-                      {teachers.map((teacher) => (
-                        <option key={teacher.id} value={teacher.id}>
-                          {teacher.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <h2 className="font-semibold text-slate-800">{formatDate(date)}</h2>
                 </div>
-              ))}
+                <div className="flex items-center gap-3">
+                  {unassignedCount > 0 && (
+                    <button
+                      onClick={() => selectDateUnassigned(date)}
+                      className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded hover:bg-orange-200"
+                    >
+                      Select {unassignedCount} Unassigned
+                    </button>
+                  )}
+                  <span className="text-sm text-slate-500">{dateLessons.length} lessons</span>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {dateLessons.map((lesson) => (
+                  <div 
+                    key={lesson.id} 
+                    className={`px-6 py-4 flex items-center gap-4 ${
+                      selectedLessons.includes(lesson.id) ? 'bg-indigo-50' : ''
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedLessons.includes(lesson.id)}
+                      onChange={() => toggleLesson(lesson.id)}
+                      className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="w-20 text-center">
+                      <p className="font-bold text-indigo-600">{formatTime(lesson.start_time)}</p>
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-slate-800">
+                        {lesson.classes?.subject === 'math' ? '🔢 Math' : '📚 English'} Level {lesson.classes?.level}
+                      </p>
+                    </div>
+                    <div className="w-48">
+                      <select
+                        value={lesson.teacher_id || ''}
+                        onChange={(e) => assignTeacher(lesson.id, e.target.value || null)}
+                        disabled={saving === lesson.id}
+                        className={`w-full px-3 py-2 rounded-lg border text-sm ${
+                          lesson.teacher_id
+                            ? 'border-green-300 bg-green-50 text-green-800'
+                            : 'border-orange-300 bg-orange-50 text-orange-800'
+                        } focus:border-blue-500 focus:ring-2 focus:ring-blue-200 disabled:opacity-50`}
+                      >
+                        <option value="">-- Unassigned --</option>
+                        {teachers.map((teacher) => (
+                          <option key={teacher.id} value={teacher.id}>
+                            {teacher.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {Object.keys(groupedLessons).length === 0 && (
           <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
